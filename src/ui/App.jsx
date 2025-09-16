@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Preferences from './preferences.jsx';
 import { authService } from '../services/auth.js';
+import './localisation/i18n.js';
 import { useTranslation } from 'react';
 
 const App = function() {
