@@ -8,3 +8,6 @@ const enLang = JSON.parse(enPack);
 i18n.use(initReactI18next).init({
     en: enLang
 })
+
+
+export default i18n;
