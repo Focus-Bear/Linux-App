@@ -2,6 +2,13 @@
     "translation":{
         "CheckingAuthentication": "Verifica dell'autenticazione",
         "DistractingKeywords": "Parole chiave che distrae",
-        "KeywordExplanation": "Quali parole chiave sono problematiche? Focus Bear ti aiuterà a essere più consapevole nell'uso di queste parole chiave. I siti che contengono queste parole chiave verranno bloccati durante le sessioni di focus. Per il resto del tempo, Focus Bear ti chiederà perché vuoi visitare siti con queste parole chiave."
+        "KeywordExplanation": "Quali parole chiave sono problematiche? Focus Bear ti aiuterà a essere più consapevole nell'uso di queste parole chiave. I siti che contengono queste parole chiave verranno bloccati durante le sessioni di focus. Per il resto del tempo, Focus Bear ti chiederà perché vuoi visitare siti con queste parole chiave.",
+        "AddKeyword": "Aggiungi parola chiave",
+        "RemoveKey": "Rimuovere",
+        "GamesKey": "Giochi",
+        "AddKey": "Aggiungere",
+        "CancelKey": "Cancellare"
+
+        
     }
 }

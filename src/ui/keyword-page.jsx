@@ -72,7 +72,7 @@ const Keywords_page = function() {
 
       <hr />
       <button id='url-button' className='ds-button' onClick={() => setShowModal(true)}>
-        Add Keyword
+        {t('AddKeyword')}
       </button>
       <button 
         id='remove-button' 
@@ -80,7 +80,7 @@ const Keywords_page = function() {
         onClick={handleRemoveKw}
         disabled={selectedKeyword.size === 0} 
       >
-        Remove ({selectedKeyword.size})
+        {t('RemoveKey')} ({selectedKeyword.size})
       </button>
 
       {/* Modal */}
@@ -93,7 +93,7 @@ const Keywords_page = function() {
                 alt="Focus Bear" 
                 className="modal-icon" 
               />
-              <span>Add Keyword</span>
+              <span>{t('AddKeyword')}</span>
               <button className="close-btn" onClick={closeModal}>✕</button>
             </div>
             
@@ -103,22 +103,22 @@ const Keywords_page = function() {
                 value={KwInput}
                 onChange={(e) => setKwInput(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleAddKw()}
-                placeholder="games"
+                placeholder={t('GamesKey')}
                 autoFocus
                 className="url-input"
               />
               <div className="help-text">
-                <div>To block sites containing a keyword: games</div>
-                <div>To block multiple keywords: social media</div>
+                <div>{t('ToBlockSitesContainingAKeyword')}</div>
+                <div>{t('ToBlockMultipleKeywords')}</div>
               </div>
             </div>
             
             <div className="modal-footer">
               <button className="cancel-btn" onClick={closeModal}>
-                Cancel
+                {t('CancelKey')}
               </button>
               <button className="add-btn" onClick={handleAddKw}>
-                Add
+                {t('AddKey')}
               </button>
             </div>
           </div>
