@@ -1,5 +1,6 @@
 {
     "translation":{
-        "CheckingAuthentication": "Checking authentication..."
+        "CheckingAuthentication": "Checking authentication...",
+        "DistractingKeywords": "Distracting Keywords"
     }
 }
