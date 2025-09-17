@@ -52,8 +52,7 @@ const Keywords_page = function() {
       <br />
 
       <p style={{ fontSize: '0.8rem' }}>
-        Which keywords are problematic? Focus Bear will help you be more intentional about how you use these keywords.
-        Sites containing these keywords will be blocked during focus sessions. The rest of the time, Focus Bear will ask you why you want to visit sites with these keywords.
+        {t('KeywordExplanation')}
       </p>
 
       <br /><br />
