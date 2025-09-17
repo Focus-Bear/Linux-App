@@ -1,18 +1,19 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import enPack from './en.json';
-import itPack from './it.json';
+import enPack from './language_packs/en.json';
+import itPack from './language_packs/it.json';
 
-console.log("test");
 
 
 
 i18n.use(initReactI18next).init({
+    // Anytime a new language pack is created, it must be added to resources.
     resources : {
         en: enPack,
         it: itPack
     },
+    // Sets the current language to be used. Will eventually be made dynamic
     lng: 'it'
 })
 
