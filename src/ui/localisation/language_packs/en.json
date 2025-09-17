@@ -1,6 +1,7 @@
 {
     "translation":{
         "CheckingAuthentication": "Checking authentication...",
-        "DistractingKeywords": "Distracting Keywords"
+        "DistractingKeywords": "Distracting Keywords",
+        "KeywordExplanation": "Which keywords are problematic? Focus Bear will help you be more intentional about how you use these keywords. Sites containing these keywords will be blocked during focus sessions. The rest of the time, Focus Bear will ask you why you want to visit sites with these keywords."
     }
 }
