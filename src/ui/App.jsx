@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import Preferences from './preferences.jsx';
 import { authService } from '../services/auth.js';
 import './localisation/i18n.js';
-import { useTranslation } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const App = function() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
 
     // Add this after your state declarations
   useEffect(() => {
