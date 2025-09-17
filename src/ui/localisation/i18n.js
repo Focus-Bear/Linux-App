@@ -7,13 +7,15 @@ import itPack from './language_packs/it.json';
 // Anytime a new language pack is created, it must be added to _resources below.
 const _resources = {
     en: enPack,
-    it: itPack
+    it: itPack,
 }
 
 
 i18n.use(initReactI18next).init({
     
     resources : _resources,
+    // Language to be used if language pack is invalid
+    fallbackLng : 'en',
     // Sets the current language to be used. Will eventually be made dynamic
     lng: 'it'
 })
