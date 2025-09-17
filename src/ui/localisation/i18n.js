@@ -1,12 +1,19 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import enPack from './en.json' assert {type: 'json'};
+import enPack from './en.json';
+import itPack from './it.json';
 
-const enLang = JSON.parse(enPack);
+console.log("test");
+
+
 
 i18n.use(initReactI18next).init({
-    en: enLang
+    resources : {
+        en: enPack,
+        it: itPack
+    },
+    lng: 'it'
 })
 
 
