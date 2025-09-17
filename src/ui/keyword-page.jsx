@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import './styles/Consistent-colors.css';
 import './styles/distracting-sites.css';
+import { useTranslation } from 'react-i18next';
 
 const Keywords_page = function() {
   const [showModal, setShowModal] = useState(false);
   const [KwInput, setKwInput] = useState('');
   const [keywords, setKeywords] = useState('');
   const [selectedKeyword, setSelectedKeyword] = useState(new Set()); 
+  const { t } = useTranslation();
 
   useEffect(function() {
     window.api?.printList(keywords);
@@ -46,7 +48,7 @@ const Keywords_page = function() {
 
   return (
     <section id="distracting-sites">
-      <h1 style={{ fontSize: '1.1rem' }}>Distracting Keywords</h1>
+      <h1 style={{ fontSize: '1.1rem' }}>{t('DistractingKeywords')}</h1>
       <br />
 
       <p style={{ fontSize: '0.8rem' }}>
