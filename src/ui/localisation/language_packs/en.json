@@ -9,6 +9,19 @@
         "ToBlockMultipleKeywords": "To block multiple keywords: social media",
         "GamesKey": "Games",
         "CancelKey": "Cancel",
-        "AddKey": "Add"
+        "AddKey": "Add",
+        "HelpKey": "Help",
+        "BlocksKey": "Blocks",
+        "SettingsKey": "Settings",
+        "EditHabits": "Edit Habits",
+        "MotivationKey": "Motivation",
+        "GeneralKey": "General",
+        "SuperDistractingSites": "Super Distracting Sites",
+        "AccountKey": "Account",
+        "AIKey": "AI",
+        "UninstallKey": "Uninstall",
+        "BlockingSchedule": "Blocking Schedule",
+        "KeywordBlocking": "Keyword Blocking"
+
     }
 }

@@ -7,11 +7,14 @@ import MotivationPage from './motivation';
 import BlockingSchedule from './blocking-schedule'
 import AccountPage from './account';
 import Keywords_page from './keyword-page';
+import { useTranslation } from 'react-i18next';
 
 const PreferencesPage = function({ user }) {
   const [activeTab, setActiveTab] = useState('Help');
   const [activeSettingsTab, setActiveSettingsTab] = useState('General');
   const [activeBlocksTab, setActiveBlocksTab] = useState('Blocking Schedule');
+  const { t } = useTranslation();
+  
 
   useEffect(() => {
     const webViewId = getWebViewForCurrentTab();
@@ -65,9 +68,9 @@ const PreferencesPage = function({ user }) {
     return null;
   };
 
-  const tabs = ['Help', 'Blocks', 'Settings', 'Edit Habits', 'Motivation'];
-  const settingsTabs = ['General', 'Super Distracting Sites', 'Account', 'AI', 'Uninstall'];
-  const blocksTabs = ['Blocking Schedule', 'Super Distracting Sites', 'Keyword Blocking'];
+  const tabs = [t('HelpKey'), t('BlocksKey'), t('SettingsKey'), t('EditHabits'), t('MotivationKey')];
+  const settingsTabs = [t('GeneralKey'), t('SuperDistractingSites'), t('AccountKey'), t('AIKey'), t('UninstallKey')];
+  const blocksTabs = [t('BlockingSchedule'), t('SuperDistractingSites'), t('KeywordBlocking')];
 
   return (
     <main className="app-container">
