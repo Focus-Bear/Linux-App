@@ -19,6 +19,9 @@ I.e. a waiting screen might have "PleaseWait" as the key. And then the value in 
 
 !!! The keys should be IDENTICAL for every language pack. If they are not identical, the phrase will not get translated to your language.!!!
 
+Also, avoid empty values. Don't just add a property because it's in another pack and then leave it blank for later. 
+Otherwise the program will just use the empty string instead of falling back to English. If you add a key, give it a suitable value.
+
 
 [LANGUAGE CAVEAT]
 So unfortunately i'm a developer, not a translator. So the example phrases i've put in for the languages are straight from google translate or chatGPT. 
