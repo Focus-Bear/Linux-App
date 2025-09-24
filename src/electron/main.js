@@ -8,9 +8,9 @@ import { createWebView, switchToWebView, hideAllWebViews, webViewConfigs } from 
 import { exec, spawn } from 'child_process';
 import "./Blocker.js"
 import { focusState } from './focusState.js';
-import SimpleUrlGrabber from './simpleUrlGrabber.js';
 import dotenv from 'dotenv';
 import { promises as fs } from 'fs';
+
 
 // Load environment variables
 dotenv.config();
@@ -19,7 +19,7 @@ let tray = null
 let focusBearView = null
 let mainWindow = null;
 let exitflag = false;
-const urlGrabber = new SimpleUrlGrabber();
+
 
 // Unified focus session state
 let isFocusActive = false;
@@ -117,11 +117,6 @@ app.on("ready", function(){
     });
 
 
-    // ipcMain.on('update-webview-bounds', function(event, webViewId, tabName) {
-    //     const bounds = getWebviewContainerBounds();
-    //     showWebView(webViewId, mainWindow, bounds);
-    // });
-
     ipcMain.on('show-preferences', function() {
         if (mainWindow) {
             mainWindow.setSize(1000, 850);
@@ -159,32 +154,7 @@ ipcMain.on('focus-session-true', function(event) {
             console.log('Could not send result to original sender (window destroyed)');
         }
     });
-    
-    //Uncomment if using hosts file method
-    /*
-    const scriptPath = join(__dirname, 'focusbear_hosts_blocker.cjs');
-    const blocklistPath = '/tmp/focusbear-blocklist.txt';
-    const command = `pkexec node "${scriptPath}" block --list "${blocklistPath}"`;
-    
-    console.log(`Starting focus session: ${command}`);
-    
-    exec(command, (error, stdout, stderr) => {
-        if (!error) {
-            isFocusActive = true;
-            focusState.setActive(true)
-            broadcastFocusState(true);
-            console.log('Focus session started with hosts file');
-        }
-        const result = error ? `Error: ${stderr || error.message}` : stdout;
-        try {
-            if (event.sender && !event.sender.isDestroyed()) {
-                event.sender.send('focus-session-result', result);
-            }
-        } catch (e) {
-            console.log('Could not send result to original sender (window destroyed)');
-        }
-    });
-    */
+
 });
 
 ipcMain.on('focus-session-false', function(event) {
@@ -208,40 +178,9 @@ ipcMain.on('focus-session-false', function(event) {
         console.log('Could not send result to original sender (window destroyed)');
     }
     
-    // Uncomment if using hosts file method
-    /*
-    const scriptPath = join(__dirname, 'focusbear_hosts_blocker.cjs');
-    const command = `pkexec node "${scriptPath}" unblock`;
-    
-    console.log(`Ending focus session: ${command}`);
-    
-    exec(command, (error, stdout, stderr) => {
-        if (!error) {
-            isFocusActive = false;
-            focusState.setActive(false);
-            broadcastFocusState(false);
-            console.log('Focus session ended');
-        }
-        
-        const result = error ? `Error: ${stderr || error.message}` : stdout;
-        
-        try {
-            if (event.sender && !event.sender.isDestroyed()) {
-                event.sender.send('focus-session-result', result);
-            }
-        } catch (e) {
-            console.log('Could not send result to original sender (window destroyed)');
-        }
-    });
-    */
 });
 
-// URL monitoring
-const stopMonitoring = urlGrabber.startRealtimeMonitoring((data) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('url-changed', data);
-    }
-}, 250);
+
 
 // Other IPC handlers
 ipcMain.on('print-urls', function(event, urls) {
@@ -262,7 +201,6 @@ app.on('window-all-closed', function() {
 });
 
 app.on('before-quit', function() {
-    stopMonitoring()
     stopMitmproxyBlocker(); // Clean up mitmproxy process
 });
 
@@ -282,7 +220,6 @@ function broadcastFocusState(isActive) {
     }
 }
 
-app.setAsDefaultProtocolClient('focusbear');
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
@@ -341,11 +278,13 @@ function stopMitmproxyBlocker() {
 }
 
 //Webiew Handling
-ipcMain.on('switch-webview', function(event, webViewId) {
+ipcMain.on('switch-webview', async function(event, webViewId) {
+    console.log(' MAIN: Received switch-webview request for:', webViewId);
+    
     const config = webViewConfigs[webViewId];
-    if (!config) return;
-
-    const webView = createWebView({ ...config, mainWindow });
+    // Get current user settings from renderer process
+    const userSettings = await getCurrentUserSettings();
+    
     const bounds = getWebviewContainerBounds();
 
     switch(webViewId) {
@@ -357,7 +296,8 @@ ipcMain.on('switch-webview', function(event, webViewId) {
             break;
         // Add other webview-specific sizing as needed
     }
-    switchToWebView(webViewId, mainWindow, bounds);
+    
+    switchToWebView(webViewId, mainWindow, bounds, userSettings);
 });
 
 ipcMain.on('hide-all-webviews', function(event) {
@@ -367,33 +307,20 @@ ipcMain.on('hide-all-webviews', function(event) {
 
 //FOR AUTH0 SETTINGS SYNCING
 
-const getSettingsPath = () => {
-  return join(app.getPath('userData'), 'settings.json');
-};
+
 
 ipcMain.handle('get-settings', async () => {
   try {
     const cloudSettings = await loadFromAuth0();
     if (cloudSettings) {
       console.log('Loaded settings from Auth0:', cloudSettings);
-      saveLocalBackup(cloudSettings);
       return cloudSettings;
     }
   } catch (error) {
-    console.log('Auth0 load failed, trying local fallback:', error.message);
-  }
-
-  try {
-    const settingsPath = getSettingsPath();
-    const data = await fs.readFile(settingsPath, 'utf8');
-    const settings = JSON.parse(data);
-    console.log('Loaded settings from local fallback:', settings);
-    return settings;
-  } catch (error) {
-    console.log('No settings found, using defaults');
-    return null;
+    console.log('Auth0 load failed, trying local fallback (Not Implemented):', error.message);
   }
 });
+
 
 ipcMain.handle('save-settings', async (event, settings) => {
   try {
@@ -410,7 +337,6 @@ ipcMain.handle('save-settings', async (event, settings) => {
       console.error('Auth0 save failed, saving locally:', error.message);
     }
     
-    await saveLocalBackup(settingsWithMeta);
     applySettings(settings);
     
     return { success: true };
@@ -460,15 +386,6 @@ async function saveToAuth0(settings) {
   });
 }
 
-async function saveLocalBackup(settings) {
-  try {
-    const settingsPath = getSettingsPath();
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
-    console.log('Local backup saved:', settingsPath);
-  } catch (error) {
-    console.error('Failed to save local backup:', error);
-  }
-}
 
 function applySettings(settings) {
   if (settings.urlList) {
@@ -481,5 +398,44 @@ function applySettings(settings) {
   console.log('Blocking mode:', settings.selectedBlockMode);
   console.log('Blocking method:', settings.selectedBlockMethod);
   console.log('Bear mode:', settings.selectedBearMode);
+}
+
+async function getCurrentUserSettings() {
+  try {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    
+      const result = await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+              reject(new Error('Timeout'));
+          }, 5000);
+          
+          mainWindow.webContents.send('get-user-settings-for-webview');
+          
+          ipcMain.once('user-settings-response', (event, data) => {
+              clearTimeout(timeout);
+              console.log('\n\nToken available:', data?.accessToken ? 'YES' : 'NO');
+              resolve(data);
+          });
+      });
+      
+      return {
+          user: result?.user || { email: 'dev@example.com' },
+          accessToken: result?.accessToken || '',
+          theme: result?.theme || 'Light',
+          selectedFont: result?.selectedFont || 'Arial',
+          languageCode: result?.languageCode || 'en',
+          isGeekMode: result?.isGeekMode || false,
+      };
+  } catch (error) {
+      console.error('Failed to get user settings:', error);
+      return {
+          user: { email: 'dev@example.com' },
+          accessToken: '',
+          theme: 'Light',
+          selectedFont: 'Arial',
+          languageCode: 'en',
+          isGeekMode: false,
+      };
+  }
 }
 // END OF AUTH 0 SETTINGS SYNCING

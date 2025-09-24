@@ -11,7 +11,7 @@ const App = function() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState('idle');
 
-  // Add this after your state declarations
+  
   useEffect(() => {
     console.log('App state changed:', { 
       user: !!user, 
@@ -62,6 +62,60 @@ const App = function() {
     };
   }, []);
 
+  useEffect(() => {
+   const handleSettingsRequest = async () => {
+    console.log('app.jsx: Settings request received, user state:', !!user);
+    
+    // If no user, wait up to 3 seconds for user to load
+    if (!user) {
+      
+      let attempts = 0;
+      while (!user && attempts < 30) { // 30 attempts = 3 seconds
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
+      }
+      
+      if (!user) {
+      
+        window.api.sendUserSettingsResponse({
+          user: { email: 'dev@example.com' },
+          accessToken: '',
+          theme: 'Light'
+        });
+        return;
+      }
+    }
+
+    console.log('app.jsx: user available');
+    
+    try {
+      const accessToken = await authService.getToken();
+      console.log('app.jsx: Token retrieved:', accessToken ? 'YES' : 'NO');
+      
+      const webviewSettings = {
+        user: user,
+        accessToken: accessToken || '',
+        theme: 'Light',
+        selectedFont: 'Arial',
+        languageCode: 'en',
+        isGeekMode: false,
+      };
+      
+      window.api.sendUserSettingsResponse(webviewSettings);
+      
+    } catch (error) {
+      console.error('app.jsx: no token:', error);
+      window.api.sendUserSettingsResponse({
+        user: { email: 'dev@example.com' },
+        accessToken: '',
+        theme: 'Light'
+      });
+    }
+  };
+
+  window.api.getUserSettingsForWebview?.(handleSettingsRequest);
+  }, [user]);
+
   const initializeAuth = async function() {
     try {    
       // Check for callback first
@@ -96,7 +150,6 @@ const App = function() {
         setSyncStatus('synced');
       } else {
         // Only auto-login if we're not processing a callback
-        console.log('User not authenticated, starting auto-login...');
         setIsAuthenticating(true);
         await authService.login();
       }
@@ -112,7 +165,7 @@ const App = function() {
 
   const initializeCloudSync = async function() {
     try {
-      console.log('Initializing cloud sync...');
+     
       
       // Initialize the cloud sync manager
       await auth0Sync.initialize();
@@ -163,10 +216,10 @@ const App = function() {
       setSyncStatus('syncing');
       await auth0Sync.forceSync();
       setSyncStatus('synced');
-      alert('Settings synced successfully from cloud!');
+
     } catch (error) {
       setSyncStatus('error');
-      alert('Sync failed. Please check your connection and try again.');
+    
     }
   };
 
@@ -264,13 +317,13 @@ const App = function() {
     switch (syncStatus) {
       case 'loading':
       case 'syncing':
-        return { text: '☁️ Syncing...', color: '#007bff' };
+        return { text: ' Syncing...', color: '#007bff' };
       case 'synced':
-        return { text: '☁️ Cloud synced', color: '#28a745' };
+        return { text: ' Cloud synced', color: '#28a745' };
       case 'error':
-        return { text: '☁️ Sync error', color: '#dc3545' };
+        return { text: ' Sync error', color: '#dc3545' };
       default:
-        return { text: '☁️ Local only', color: '#6c757d' };
+        return { text: ' Local only', color: '#6c757d' };
     }
   };
 
@@ -338,6 +391,7 @@ const App = function() {
       {/* Main app content - directly show preferences */}
       <Preferences user={user} />
     </div>
+    
   );
 };
 

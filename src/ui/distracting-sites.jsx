@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './styles/Consistent-colors.css';
 import './styles/distracting-sites.css';
 import { useUrlList } from '../services/sync.js';
+import { authService } from '../services/auth.js';
 
 
 
@@ -94,6 +95,22 @@ const Distracting_sites_page = function() {
       >
         Remove ({selectedUrls.size})
       </button>
+{/* 
+        REMOVE LATER */}
+        <button 
+          onClick={async () => {
+            try {
+              const token = await authService.getToken();
+
+              alert(token ? `Token available: ${token.substring(0, 200) + '...'}` : 'No token available');
+            } catch (error) {
+            }
+          }}
+          style={{ padding: '5px', margin: '5px', backgroundColor: '#007bff', color: 'white' }}
+        >
+          Debug Token
+        </button>
+{/* REMOVE LATER */}
 
       <br />
       <div className="instant-block-wrapper">

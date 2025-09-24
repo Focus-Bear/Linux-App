@@ -117,7 +117,18 @@ const API = {
 
     sendAuth0SaveResponse: function(result) {
         ipcRenderer.send('auth0-save-response', result);
-    }
+    },
+
+    getUserSettingsForWebview: function(callback) {
+        ipcRenderer.on('get-user-settings-for-webview', callback);
+    },
+
+    sendUserSettingsResponse: function(data) {
+        ipcRenderer.send('user-settings-response', data);
+    },
+
+    
+    
     
 
 }

@@ -19,11 +19,7 @@ class AuthService {
     this.user = null;
 
 
-    console.log('=== AUTH DEBUG ===');
-    console.log('Environment Mode:', import.meta.env.MODE);
-    console.log('Auth0 Domain:', import.meta.env.VITE_AUTH0_DOMAIN);
-    console.log('Auth0 Client ID:', import.meta.env.VITE_AUTH0_CLIENT_ID);
-    console.log('Redirect URI:', window.location.origin + '/callback');
+
   }
 
   async login() {
@@ -44,8 +40,6 @@ class AuthService {
 
   async handleRedirectCallback() {
     try {
-      console.log('Handling Auth0 redirect callback...');
-      console.log('Current URL:', window.location.href);
       
       await this.auth0.handleRedirectCallback();
       
@@ -65,7 +59,6 @@ class AuthService {
 
   async logout() {
     try {
-      console.log('Logging out...');
       this.user = null;
       
       await this.auth0.logout({
@@ -141,6 +134,8 @@ class AuthService {
       }
     }
   }
+
+
   async getUserSettings() {
     try {
       const user = await this.getUser();
@@ -173,20 +168,6 @@ class AuthService {
       const stored = localStorage.getItem(`settings_${user.sub}`);
       return stored ? JSON.parse(stored) : null;
       
-    } catch (error) {
-      console.error('Failed to get user settings:', error);
-      return null;
-    }
-  }
-
-  async getManagementToken() {
-    try {
-      const user = await this.getUser();
-      if (!user) return null;
-      
-      const stored = localStorage.getItem(`settings_${user.sub}`);
-      console.log('Settings loaded from localStorage:', stored ? JSON.parse(stored) : null);
-      return stored ? JSON.parse(stored) : null;
     } catch (error) {
       console.error('Failed to get user settings:', error);
       return null;
