@@ -216,8 +216,8 @@ class SimpleAuth0Sync {
     }
   }
 }
-
 const auth0Sync = new SimpleAuth0Sync();
+
 
 export const useSyncedState = (key) => {
   if (!(key in SYNCED_STATES)) {

@@ -10,7 +10,7 @@ class AuthService {
         redirect_uri: window.location.origin + '/callback',
         scope: 'openid profile email offline_access',
         response_type: 'code',
-        audience: `https://${import.meta.env.VITE_AUTH0_DOMAIN}/api/v2/`  // Add this line
+        audience: `https://auth.focusbear.io/api/v2/`  // Add this line
       },
       useRefreshTokens: true,
       cacheLocation: 'localstorage'
@@ -29,7 +29,7 @@ class AuthService {
       await this.auth0.loginWithRedirect({
       authorizationParams: {
         scope: 'openid profile email offline_access',
-        audience: `https://${import.meta.env.VITE_AUTH0_DOMAIN}/api/v2/`
+        audience: `https://auth.focusbear.io/api/v2/`
       }
     });
     } catch (error) {
@@ -90,10 +90,30 @@ class AuthService {
 
   async getToken() {
     try {
-      return await this.auth0.getTokenSilently();
+        const token = await this.auth0.getTokenSilently({
+            authorizationParams: {
+                audience: `https://auth.focusbear.io/api/v2/`,
+                scope: 'openid profile email offline_access'
+            }
+        });
+        
+        // Debug: decode JWT to see contents (don't do this in production)
+        if (token) {
+            const parts = token.split('.');
+            const payload = JSON.parse(atob(parts[1]));
+            console.log('Token payload:', {
+                audience: payload.aud,
+                scopes: payload.scope,
+                subject: payload.sub,
+                expires: new Date(payload.exp * 1000),
+                issuer: payload.iss
+            });
+        }
+        
+        return token;
     } catch (error) {
-      console.error('Token retrieval failed:', error);
-      return null;
+        console.error('Token retrieval failed:', error);
+        return null;
     }
   }
 

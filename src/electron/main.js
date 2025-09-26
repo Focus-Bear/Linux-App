@@ -402,34 +402,56 @@ function applySettings(settings) {
 
 async function getCurrentUserSettings() {
   try {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      console.log('MAIN: Requesting user settings from renderer...');
+      
+      // Give renderer more time to be ready
+      await new Promise(resolve => setTimeout(resolve, 200));
     
       const result = await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
+              console.log('MAIN: Timeout waiting for user settings');
               reject(new Error('Timeout'));
-          }, 5000);
+          }, 8000); // Increased timeout
           
+          // Send request to renderer
           mainWindow.webContents.send('get-user-settings-for-webview');
+          console.log('MAIN: Request sent to renderer');
           
+          // Listen for response
           ipcMain.once('user-settings-response', (event, data) => {
               clearTimeout(timeout);
-              console.log('\n\nToken available:', data?.accessToken ? 'YES' : 'NO');
+              console.log('MAIN: Received settings response');
+              console.log('MAIN: Token available:', data?.accessToken ? 'YES' : 'NO');
+              console.log('MAIN: Token length:', data?.accessToken?.length || 0);
               resolve(data);
           });
       });
       
-      return {
-          user: result?.user || { email: 'dev@example.com' },
+      // Validate and return settings
+      const settings = {
+          user: result?.user || { email: 'dev@example.com', name: 'Development User' },
           accessToken: result?.accessToken || '',
           theme: result?.theme || 'Light',
           selectedFont: result?.selectedFont || 'Arial',
           languageCode: result?.languageCode || 'en',
           isGeekMode: result?.isGeekMode || false,
       };
+      
+      console.log('MAIN: Final settings prepared:', {
+          hasUser: !!settings.user,
+          hasToken: !!settings.accessToken,
+          tokenLength: settings.accessToken?.length || 0,
+          theme: settings.theme
+      });
+      
+      return settings;
+      
   } catch (error) {
-      console.error('Failed to get user settings:', error);
+      console.error('MAIN: Failed to get user settings:', error);
+      
+      // Return fallback settings
       return {
-          user: { email: 'dev@example.com' },
+          user: { email: 'dev@example.com', name: 'Development User' },
           accessToken: '',
           theme: 'Light',
           selectedFont: 'Arial',
@@ -438,4 +460,3 @@ async function getCurrentUserSettings() {
       };
   }
 }
-// END OF AUTH 0 SETTINGS SYNCING

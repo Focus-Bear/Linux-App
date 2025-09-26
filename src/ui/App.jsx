@@ -24,6 +24,109 @@ const App = function() {
     });
   }, [user, isLoading, isAuthenticating, settingsLoaded, syncStatus]);
 
+
+  useEffect(() => {
+    let isHandling = false;
+    
+    const handleSettingsRequest = async () => {
+      if (isHandling) {
+        console.log('app.jsx: Settings request already in progress, skipping');
+        return;
+      }
+      
+      isHandling = true;
+      console.log('app.jsx: Settings request received, user state:', !!user);
+      
+      try {
+        // Your existing handleSettingsRequest logic here...
+        let currentUser = user;
+        if (!currentUser) {
+          console.log('RENDERER: No user, attempting to get from auth service...');
+          
+          let attempts = 0;
+          while (!currentUser && attempts < 30) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
+            try {
+              const isAuth = await authService.isAuthenticated();
+              if (isAuth) {
+                currentUser = await authService.getUser();
+                console.log('RENDERER: User retrieved from auth service:', !!currentUser);
+              }
+            } catch (err) {
+              console.log('RENDERER: Auth check failed:', err.message);
+            }
+            
+            attempts++;
+          }
+        }
+        
+        let accessToken = '';
+        if (currentUser) {
+          console.log('RENDERER: Attempting to get token...');
+          try {
+            accessToken = await authService.getToken();
+            console.log('RENDERER: Token retrieved:', !!accessToken);
+          } catch (error) {
+            console.error('RENDERER: Token retrieval failed:', error);
+            
+            try {
+              const tokenSilently = await authService.auth0?.getTokenSilently();
+              accessToken = tokenSilently || '';
+              console.log('RENDERER: Token via getTokenSilently:', !!accessToken);
+            } catch (altError) {
+              console.error('RENDERER: Alternative token retrieval failed:', altError);
+            }
+          }
+        }
+        
+        const webviewSettings = {
+          user: currentUser || { 
+            email: 'dev@example.com', 
+            name: 'Development User',
+            sub: 'dev-user-123'
+          },
+          accessToken: accessToken,
+          theme: 'Light',
+          selectedFont: 'Arial',
+          languageCode: 'en',
+          isGeekMode: false,
+        };
+        
+        console.log('RENDERER: Sending webview settings (final)');
+        window.api.sendUserSettingsResponse(webviewSettings);
+        
+      } catch (error) {
+        console.error('RENDERER: Settings request handling failed:', error);
+        
+        const fallbackSettings = {
+          user: { 
+            email: 'dev@example.com', 
+            name: 'Development User',
+            sub: 'dev-user-123'
+          },
+          accessToken: '',
+          theme: 'Light',
+          selectedFont: 'Arial',
+          languageCode: 'en',
+          isGeekMode: false,
+        };
+        
+        window.api.sendUserSettingsResponse(fallbackSettings);
+      } finally {
+        isHandling = false;
+      }
+    };
+
+    window.api.getUserSettingsForWebview?.(handleSettingsRequest);
+    
+    // Cleanup
+    return () => {
+      isHandling = false;
+    };
+  }, [user]);
+
+
   useEffect(() => {
     initializeAuth();
     
@@ -61,60 +164,6 @@ const App = function() {
       window.removeEventListener('auth-error', handleAuthError);
     };
   }, []);
-
-  useEffect(() => {
-   const handleSettingsRequest = async () => {
-    console.log('app.jsx: Settings request received, user state:', !!user);
-    
-    // If no user, wait up to 3 seconds for user to load
-    if (!user) {
-      
-      let attempts = 0;
-      while (!user && attempts < 30) { // 30 attempts = 3 seconds
-        await new Promise(resolve => setTimeout(resolve, 100));
-        attempts++;
-      }
-      
-      if (!user) {
-      
-        window.api.sendUserSettingsResponse({
-          user: { email: 'dev@example.com' },
-          accessToken: '',
-          theme: 'Light'
-        });
-        return;
-      }
-    }
-
-    console.log('app.jsx: user available');
-    
-    try {
-      const accessToken = await authService.getToken();
-      console.log('app.jsx: Token retrieved:', accessToken ? 'YES' : 'NO');
-      
-      const webviewSettings = {
-        user: user,
-        accessToken: accessToken || '',
-        theme: 'Light',
-        selectedFont: 'Arial',
-        languageCode: 'en',
-        isGeekMode: false,
-      };
-      
-      window.api.sendUserSettingsResponse(webviewSettings);
-      
-    } catch (error) {
-      console.error('app.jsx: no token:', error);
-      window.api.sendUserSettingsResponse({
-        user: { email: 'dev@example.com' },
-        accessToken: '',
-        theme: 'Light'
-      });
-    }
-  };
-
-  window.api.getUserSettingsForWebview?.(handleSettingsRequest);
-  }, [user]);
 
   const initializeAuth = async function() {
     try {    
