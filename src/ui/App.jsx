@@ -111,7 +111,7 @@ const App = function() {
       }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: '18px', marginBottom: '10px' }}>Focus Bear</div>
-          <div style={{ fontSize: '14px', color: '#666' }}>Checking authentication...</div>
+          <div style={{ fontSize: '14px', color: '#666' }}>{t('CheckingAuthentication')}</div>
         </div>
       </div>
     );
@@ -141,7 +141,7 @@ const App = function() {
           {isAuthenticating ? (
             <div>
               <p style={{ marginBottom: '30px', color: '#666' }}>
-                Redirecting to authentication...
+                {t('RedirectingAuthentication')}
               </p>
               <div style={{ 
                 padding: '12px 30px',
@@ -150,16 +150,16 @@ const App = function() {
                 borderRadius: '5px',
                 fontSize: '16px'
               }}>
-                Please wait...
+                {t('PleaseWait')}
               </div>
             </div>
           ) : (
             <div>
               <p style={{ marginBottom: '20px', color: '#666' }}>
-                Sign in to access your settings and features
+                {t('SignInToAccess')}
               </p>
               <p style={{ marginBottom: '30px', color: '#888', fontSize: '14px' }}>
-                Authentication failed or was cancelled. Try again:
+                {t('AuthenticationFailed')}
               </p>
               <button 
                 onClick={handleManualLogin}
@@ -173,7 +173,7 @@ const App = function() {
                   fontSize: '16px'
                 }}
               >
-                Sign in with Auth0
+                {t('SignInWithAuth0')}
               </button>
             </div>
           )}
@@ -195,7 +195,7 @@ const App = function() {
         alignItems: 'center'
       }}>
         <span style={{ fontSize: '14px' }}>
-          Signed in as: <strong>{user.email || user.name}</strong>
+          {t("SignedInAs")} <strong>{user.email || user.name}</strong>
         </span>
         <button 
           onClick={handleLogout}
@@ -209,7 +209,7 @@ const App = function() {
             fontSize: '12px'
           }}
         >
-          Sign out
+          {t("SignOut")}
         </button>
       </div>
       

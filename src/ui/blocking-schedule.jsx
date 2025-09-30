@@ -1,13 +1,13 @@
 import './styles/blocking-schedule.css'
 import { useState } from 'react';
-
+import { useTranslation } from 'react-i18next';
 
 
 
 const BlockingSchedule = function(){
 
     const [selectedBlockMode, setSelectedBlockMode] = useState('manual');
-
+    const { t } = useTranslation();
 
     const handleChange = function(event) {
         //setSelectedFruit(e.target.value);
@@ -23,7 +23,7 @@ const BlockingSchedule = function(){
             <hr id='bs-divide'/>
             <div id="blockmodes-root">
 
-                <h3>When do you want to block distracting sites?</h3>
+                <h3>{t('WhenDoYouWantToBlockSites')}</h3>
                 <br />
                 <div >
                     <input 
@@ -32,12 +32,10 @@ const BlockingSchedule = function(){
                     value="automatic" 
                     checked={selectedBlockMode === 'automatic'} 
                     onChange={handleChange} 
-                    /> Automatically (until the end of the workday)
+                    /> {t("AutomaticSchedule")}
                 </div>
                 <small>
-                Block distracting sites until you finish your work/study. 
-                You'll get some free time before bed (check your socials guilt free!). 
-                When it's time to sleep, sites are blocked again.
+                    {t('AutomaticScheduleDescription')}
                 </small>
                 <br />
 
@@ -49,10 +47,10 @@ const BlockingSchedule = function(){
                     value="manual" 
                     checked={selectedBlockMode === 'manual'} 
                     onChange={handleChange} 
-                    /> Manually (when i switch it on)
+                    /> {t('ManualSchedule')}
                     
                 </div>
-                <small>Block distracting sites when you click the Start Focus Session button</small>
+                <small>{t('ManualScheduleDescription')}</small>
                 <br />
 
 
@@ -63,10 +61,10 @@ const BlockingSchedule = function(){
                     value="advanced" 
                     checked={selectedBlockMode === 'advanced'} 
                     onChange={handleChange} 
-                    /> Advanced (Customised blocking schedule)
+                    /> {t('AdvancedSchedule')}
                     
                 </div>
-                <small>Coming Soon</small>
+                <small>{t('ComingSoon')}</small>
               
 
 

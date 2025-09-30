@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './styles/Consistent-colors.css';
 import './styles/distracting-sites.css';
-
+import { useTranslation } from 'react-i18next';
 
 
 const Distracting_sites_page = function() {
@@ -11,6 +11,7 @@ const Distracting_sites_page = function() {
   const [selectedUrls, setSelectedUrls] = useState(new Set());
   const [isChecked, setIsChecked] = useState(false);
   const [currentUrl, setCurrentUrl] = useState('No browser detected'); //for url monitoring 
+  const { t } = useTranslation();
 
   // Listen for URL monitoring changes
   useEffect(() => {
@@ -69,18 +70,17 @@ const Distracting_sites_page = function() {
 
   return (
     <section id="distracting-sites">
-      <h1 style={{ fontSize: '1.1rem' }}>Super Distracting Sites</h1>
+      <h1 style={{ fontSize: '1.1rem' }}>{t('SuperDistractingSites')}</h1>
       <br />
 
       <p style={{ fontSize: '0.8rem' }}>
-        Which sites do you waste time on? Focus Bear will help you be more intentional about how you use these sites.
-        They will be blocked during focus sessions. The rest of the time, Focus Bear will ask you why you want to use the site.
+        {t('SuperDistractingSitesExplanation')}
       </p>
 
       {/* FOR URL MONITORING */}
       <br />
       <h4 style={{ fontSize: '0.9rem', margin: '0 0 5px 0', color: '#666' }}>
-          Current Browser URL: {currentUrl}
+          {t('CurrentBrowserURL')} {currentUrl}
       </h4>
 
       <br /><br />
@@ -100,7 +100,7 @@ const Distracting_sites_page = function() {
 
       <hr />
       <button id='url-button' className='ds-button' onClick={() => setShowModal(true)}>
-        Add URL
+        {t('AddURL')}
       </button>
       <button 
         id='remove-button' 
@@ -108,7 +108,7 @@ const Distracting_sites_page = function() {
         onClick={handleRemoveUrl}
         disabled={selectedUrls.size === 0}
       >
-        Remove ({selectedUrls.size})
+        {t('RemoveKey')} ({selectedUrls.size})
       </button>
 
       <br />
@@ -117,7 +117,7 @@ const Distracting_sites_page = function() {
           type="checkbox" 
           onChange={(e) => setIsChecked(e.target.checked)} 
         />
-        <span id="instant-block-label">Immediately block super distracting sites</span>
+        <span id="instant-block-label">{t('ImmediatelyBlock')}</span>
       </div>
 
       {/* Modal */}
@@ -130,7 +130,7 @@ const Distracting_sites_page = function() {
                 alt="Focus Bear" 
                 className="modal-icon" 
               />
-              <span>Add Web Url</span>
+              <span>{t('AddWebURL')}</span>
               <button className="close-btn" onClick={closeModal}>✕</button>
             </div>
             
@@ -145,17 +145,17 @@ const Distracting_sites_page = function() {
                 className="url-input"
               />
               <div className="help-text">
-                <div>To block a certain website: domain.com</div>
-                <div>To block all subdomains of a website: *.domain.com</div>
+                <div>{t('ToBlockCertainWebsites')}</div>
+                <div>{t('ToBlockAllSubdomains')}</div>
               </div>
             </div>
             
             <div className="modal-footer">
               <button className="cancel-btn" onClick={closeModal}>
-                Cancel
+                {t("CancelKey")}
               </button>
               <button className="add-btn" onClick={handleAddUrl}>
-                Add
+                {t('AddKey')}
               </button>
             </div>
           </div>

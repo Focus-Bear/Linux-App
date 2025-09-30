@@ -1,12 +1,23 @@
 {
     "translation":{
         "CheckingAuthentication": "Checking authentication...",
+        "RedirectingAuthentication": "Redirecting to authentication...",
+        "PleaseWait": "Please wait...",
+        "AuthenticationFailed": "Authentication failed or was cancelled. Try again:",
+        "SignInWithAuth0": "Sign in with Auth0",
+        "SignInToAccess": "Sign in to access your settings and features",
+        "SignedInAs": "Signed in as:",
+        "SignOut": "Sign out",
         "DistractingKeywords": "Distracting Keywords",
         "KeywordExplanation": "Which keywords are problematic? Focus Bear will help you be more intentional about how you use these keywords. Sites containing these keywords will be blocked during focus sessions. The rest of the time, Focus Bear will ask you why you want to visit sites with these keywords.",
         "AddKeyword": "Add Keyword",
+        "AddURL": "Add URL",
+        "AddWebURL": "Add Web URL",
         "RemoveKey": "Remove",
         "ToBlockSitesContainingAKeyword": "To block sites containing a keyword: games",
         "ToBlockMultipleKeywords": "To block multiple keywords: social media",
+        "ToBlockCertainWebsites": "To block a certain website: domain.com",
+        "ToBlockAllSubdomains": "To block all subdomains of a website: *.domain.com",
         "GamesKey": "Games",
         "CancelKey": "Cancel",
         "AddKey": "Add",
@@ -21,7 +32,18 @@
         "AIKey": "AI",
         "UninstallKey": "Uninstall",
         "BlockingSchedule": "Blocking Schedule",
-        "KeywordBlocking": "Keyword Blocking"
+        "KeywordBlocking": "Keyword Blocking",
+        "WhenDoYouWantToBlockSites": "When do you want to block distracting sites?",
+        "AutomaticSchedule": "Automatically (until the end of the workday)",
+        "AutomaticScheduleDescription": "Block distracting sites until you finish your work/study. You'll get some free time before bed (check your socials guilt free!). When it's time to sleep, sites are blocked again.",
+        "ManualSchedule": "Manually (when i switch it on)",
+        "ManualScheduleDescription": "Block distracting sites when you click the Start Focus Session button",
+        "AdvancedSchedule": "Advanced (Customised blocking schedule)",
+        "ComingSoon": "Coming Soon",
+        "SuperDistractingSitesExplanation": "Which sites do you waste time on? Focus Bear will help you be more intentional about how you use these sites. They will be blocked during focus sessions. The rest of the time, Focus Bear will ask you why you want to use the site.",
+        "CurrentBrowserURL": "Current Browser URL:",
+        "ImmediatelyBlock": "Immediately block super distracting sites",
+        "CantImplement": "Cant implement this yet as the \"Your Goals\" endpoint is not avaliable on the dashboard"
 
     }
 }
