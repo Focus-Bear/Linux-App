@@ -11,6 +11,9 @@ import { focusState } from './focusState.js';
 import SimpleUrlGrabber from './simpleUrlGrabber.js';
 import dotenv from 'dotenv';
 import { promises as fs } from 'fs';
+// --- Transparent-proxy start/stop helpers (replace existing startMitmproxyBlocker & stopMitmproxyBlocker) ---
+import { access } from 'fs';
+import { constants } from 'fs';
 
 // Load environment variables
 dotenv.config();
@@ -323,63 +326,150 @@ function unsetSystemProxy(callback) {
     });
 }
 
+
+
+// Helper to run a script with elevation
+function runElevatedScript(scriptPath, args = []) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      // Ensure script exists
+      await fs.access(scriptPath, constants.F_OK);
+    } catch (err) {
+      return reject(new Error(`Script not found: ${scriptPath}`));
+    }
+
+    const elevCmd = 'pkexec'; // change to 'sudo' if you prefer
+    console.log(`Attempting to run elevated script via ${elevCmd}: ${scriptPath}`);
+
+    // Try pkexec first
+    let proc;
+    try {
+      proc = spawn(elevCmd, [scriptPath, ...args], { stdio: 'inherit' });
+    } catch (err) {
+      // spawn can throw synchronously in rare cases
+      console.warn(`Failed to spawn ${elevCmd}: ${err.message}`);
+      proc = null;
+    }
+
+    if (!proc) {
+      // Fallback to bash
+      console.warn(`Falling back to 'bash ${scriptPath}'`);
+      const fallback = spawn('bash', [scriptPath, ...args], { stdio: 'inherit' });
+      fallback.on('error', (e) => reject(new Error(`Failed to run fallback bash: ${e.message}`)));
+      fallback.on('close', (code) => {
+        if (code !== 0) reject(new Error(`Script exited with code ${code}`));
+        else resolve(`Script ${scriptPath} finished (fallback bash)`);
+      });
+      return;
+    }
+
+    // Handle pkexec process events
+    proc.on('error', (err) => {
+      console.warn(`pkexec process error: ${err.message}. Falling back to bash...`);
+      // pkexec failed to start — fallback to bash
+      const fallback = spawn('bash', [scriptPath, ...args], { stdio: 'inherit' });
+      fallback.on('error', (e) => reject(new Error(`Failed to run fallback bash: ${e.message}`)));
+      fallback.on('close', (code) => {
+        if (code !== 0) reject(new Error(`Script exited with code ${code}`));
+        else resolve(`Script ${scriptPath} finished (fallback bash)`);
+      });
+    });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`${elevCmd} script exited with code ${code}`));
+      } else {
+        resolve(`Script ${scriptPath} finished via ${elevCmd}`);
+      }
+    });
+  });
+}
+
 // MITMPROXY BLOCKING FUNCTIONS
 function startMitmproxyBlocker(callback) {
     const scriptPath = join(__dirname, '../python/mitmproxy_blocker.py');
-    const proxyHost = '127.0.0.1';
-    const proxyPort = 8080;
+    const setupPath = join(__dirname, '../sh_scripts/network_setup.sh');
+    const mitmPath = process.env.MITM_PATH || 'mitmdump';
 
-    setSystemProxy(proxyHost, proxyPort, (err, result) => {
+    console.log(`Running network setup script: ${setupPath}`);
+
+     runElevatedScript(scriptPath, [], (err, result) => {
         if (err) {
-            callback(err, 'Failed to set system proxy');
+            console.error('Failed to run network_setup.sh:', err.message);
+            if (callback) callback(err, err.message);
             return;
         }
 
-        console.log('Starting mitmproxy blocker...');
-        
-        mitmproxyProcess = spawn('mitmdump', [
+        console.log('Network setup completed:', result);
+        console.log('Starting mitmproxy in transparent mode...');
+
+        // Start mitmdump in transparent mode and load your filter script
+        const mitmArgs = [
             '-s', scriptPath,
-            '--set', 'block_global=false'
-        ]);
+            '--mode', 'transparent',
+            '--set', 'block_global=false',
+            '--set', 'flow_detail=0',
+            '--set', 'console_eventlog_verbosity=error',
+            '--set', 'termlog_verbosity=error'
+        ];
 
-        mitmproxyProcess.stdout.on('data', (data) => {
-            console.log(`mitmproxy: ${data}`);
-        });
+        try {
+            mitmproxyProcess = spawn(mitmPath, mitmArgs);
 
-        mitmproxyProcess.stderr.on('data', (data) => {
-            console.error(`mitmproxy error: ${data}`);
-        });
+            mitmproxyProcess.stdout.on('data', (data) => {
+                console.log(`mitmproxy: ${data.toString()}`);
+            });
 
-        mitmproxyProcess.on('close', (code) => {
-            console.log(`mitmproxy process exited with code ${code}`);
-            mitmproxyProcess = null;
-            isFocusActive = false;
-        });
+            mitmproxyProcess.stderr.on('data', (data) => {
+                console.error(`mitmproxy error: ${data.toString()}`);
+            });
 
-        mitmproxyProcess.on('error', (error) => {
-            console.error('Failed to start mitmproxy:', error);
-            callback(error, error.message);
-            return;
-        });
+            mitmproxyProcess.on('close', (code) => {
+                console.log(`mitmproxy process exited with code ${code}`);
+                mitmproxyProcess = null;
+                isFocusActive = false;
+            });
 
-        setTimeout(() => {
-            callback(null, 'mitmproxy blocker started');
-        }, 1000);
+            mitmproxyProcess.on('error', (error) => {
+                console.error('Failed to start mitmproxy:', error);
+                if (callback) callback(error, error.message);
+                return;
+            });
+
+            // Give mitmproxy a moment to spin up, then callback success to the UI
+            setTimeout(() => {
+                if (callback) callback(null, 'mitmproxy (transparent) started with nosurfin flags');
+            }, 1000);
+        } catch (spawnErr) {
+            console.error('Error spawning mitmproxy:', spawnErr);
+            if (callback) callback(spawnErr, spawnErr.message);
+        }
     });
 }
 
 function stopMitmproxyBlocker() {
+    const resetPath = join(__dirname, '../sh_scripts/network_reset.sh');
+
     if (mitmproxyProcess) {
         console.log('Stopping mitmproxy blocker...');
-        mitmproxyProcess.kill('SIGTERM');
-        mitmproxyProcess = null;
-    }
-    unsetSystemProxy((err, result) => {
-        if (err) {
-            console.error('Failed to unset system proxy:', result);
-        } else {
-            console.log('System proxy unset:', result);
+        try {
+            mitmproxyProcess.kill('SIGTERM');
+        } catch (e) {
+            console.warn('Error killing mitmproxy process:', e);
         }
+        mitmproxyProcess = null;
+    } else {
+        console.log('mitmproxy process not running.');
+    }
+
+    console.log(`Running network reset script: ${resetPath}`);
+
+    runElevatedScript(scriptPath, [], (err, result) => {
+        if (err) {
+            console.error('Failed to run network_reset.sh:', err.message);
+            return;
+        }
+        console.log('Network reset completed:', result);
     });
 }
 
