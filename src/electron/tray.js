@@ -1,3 +1,5 @@
+import { routineSync } from '../services/routine.js';
+
 // State management
 const trayState = {
     routineActive: false,
@@ -19,7 +21,7 @@ function updateFocusSessionUI() {
     }
 }
 
-function updateRoutineSessionUI() {
+export const updateRoutineSessionUI = async () => {
     const resumeBtn = document.getElementById('resume-habits');
     const habits = document.querySelectorAll(".layout");
 
@@ -29,18 +31,37 @@ function updateRoutineSessionUI() {
     // Resume Habits Button - hide when completed
     // resumeBtn.style.display = trayState.habitsCompleted ? 'none' : 'block';
 
+    const result = ''
+    try {
+        result = await routineSync.loadRoutineFromFocusBearAPI(); 
+    } catch {
+        result = "fail :P"
+    }
+
     if (!trayState.routineActive) {
         resumeBtn.className = 'tray-button active';
         resumeBtn.textContent = trayState.dayTime ? 'Begin Morning Routine ☀️' : 'Start Evening Routine 🌙';
         habits.forEach(el => {
             el.classList.toggle('accordion-active', trayState.routineActive);
         });
+        // const habitList = document.querySelectorAll(".accordion__answer");
+        // habitList.forEach(container => {
+        //     container.innerHTML = result
+        //         .map(habit => `<li>${habit.name}</li>`)
+        //         .join('');
+        // });
     } else {
         resumeBtn.className = 'tray-button primary';
         resumeBtn.textContent = trayState.dayTime ? 'Pause Morning Routine ☀️' : 'Pause Evening Routine 🌙';
         habits.forEach(el => {
             el.classList.toggle('accordion-active', trayState.routineActive);
         });
+        // const habitList = document.querySelectorAll(".accordion__answer");
+        // habitList.forEach(container => {
+        //     container.innerHTML = result
+        //         .map(habit => `<li>${habit.name}</li>`)
+        //         .join('');
+        // });
     }
 }
 
