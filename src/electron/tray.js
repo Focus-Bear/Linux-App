@@ -1,17 +1,13 @@
 // State management
 const trayState = {
-    habitsCompleted: false,
+    routineActive: false,
     focusSessionActive: false,
+    dayTime: true,
     // subscriptionActive: false
 };
 
-function updateUI() {
-    const resumeBtn = document.getElementById('resume-habits');
+function updateFocusSessionUI() {
     const focusBtn = document.getElementById('focus-session');
-    const subBtn = document.getElementById('subscription');
-
-    // Resume Habits Button - hide when completed
-    resumeBtn.style.display = trayState.habitsCompleted ? 'none' : 'block';
 
     // Focus Session Button - change text and color
     if (trayState.focusSessionActive) {
@@ -21,16 +17,60 @@ function updateUI() {
         focusBtn.textContent = 'Start Focus Session';
         focusBtn.className = 'tray-button primary';
     }
+}
 
+function updateRoutineSessionUI() {
+    const resumeBtn = document.getElementById('resume-habits');
+    const habits = document.querySelectorAll(".layout");
 
+    console.log('Routine active:', trayState.routineActive);
+    console.log('dayTime:', trayState.dayTime);
+
+    // Resume Habits Button - hide when completed
+    // resumeBtn.style.display = trayState.habitsCompleted ? 'none' : 'block';
+
+    if (!trayState.routineActive) {
+        resumeBtn.className = 'tray-button active';
+        resumeBtn.textContent = trayState.dayTime ? 'Begin Morning Routine ☀️' : 'Start Evening Routine 🌙';
+        habits.forEach(el => {
+            el.classList.toggle('accordion-active', trayState.routineActive);
+        });
+    } else {
+        resumeBtn.className = 'tray-button primary';
+        resumeBtn.textContent = trayState.dayTime ? 'Pause Morning Routine ☀️' : 'Pause Evening Routine 🌙';
+        habits.forEach(el => {
+            el.classList.toggle('accordion-active', trayState.routineActive);
+        });
+    }
+}
+
+function updateSubscriptionUI () {
+    const subBtn = document.getElementById('subscription');
+
+    console.log("Not yet implemented")
+}
+
+function updateUI() {
+    let habits = document.querySelectorAll(".accordion");
+    habits.forEach((event) => {
+        event.addEventListener("click", () => {
+            if (event.classList.contains("active")) {
+                event.classList.remove("active");
+        } else {
+            event.classList.add("active");
+        }
+    });
+
+    updateFocusSessionUI();
+    updateRoutineSessionUI();
+});
 }
 
 // Button event handlers
 function resumeHabits() {
-    window.api?.resumeHabits?.();
-    // Update state when habits are completed
-    trayState.habitsCompleted = true;
-    updateUI();
+    trayState.routineActive = !trayState.routineActive
+    window.api?.toggleRoutineSession?.(trayState.routineActive);
+    updateRoutineSessionUI();
 }
 
 function openPreferences() {
@@ -44,7 +84,7 @@ function openTodoList() {
 function toggleFocusSession() {
     trayState.focusSessionActive = !trayState.focusSessionActive;
     window.api?.toggleFocusSession?.(trayState.focusSessionActive);
-    updateUI();
+    updateFocusSessionUI();
 }
 
 function quit() {
@@ -81,7 +121,16 @@ function init() {
         // You'll need to add this to preload.js
         window.api.onFocusStateChanged?.((isActive) => {
             trayState.focusSessionActive = isActive;
-            updateUI();
+            updateFocusSessionUI();
+        });
+    }
+
+    // Add listener for state broadcasts
+    if (window.api?.onRoutineStateChanged) {
+        // You'll need to add this to preload.js
+        window.api.onRoutineStateChanged?.((isActive) => {
+            trayState.routineActive = isActive;
+            updateRoutineSessionUI();
         });
     }
 }

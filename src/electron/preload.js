@@ -75,6 +75,21 @@ const API = {
       else {return ipcRenderer.send("focus-session-false")}
     },
 
+
+    toggleRoutineSession: function(flag) {
+    if (flag) {
+        return ipcRenderer.send('routine-state-true');
+        } else {
+            return ipcRenderer.send('routine-state-false');
+        }
+    },
+
+    onRoutineStateChanged: function(callback) {
+        ipcRenderer.on('routine-state-changed',  function(event, isActive) {
+            callback(isActive)
+        });
+    },
+
     //for url monitoring
     onUrlChanged: function(callback) {
         ipcRenderer.on('url-changed', function(event, data) {
