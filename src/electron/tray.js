@@ -247,6 +247,7 @@ function updateFocusSessionUI() {
 
 const updateRoutineSessionUI = async () => {
     const resumeBtn = document.getElementById('resume-habits');
+    const habits = document.querySelectorAll(".layout");
 
     console.log('Routine active:', trayState.routineActive);
     console.log('dayTime:', trayState.dayTime);
@@ -259,27 +260,39 @@ const updateRoutineSessionUI = async () => {
         resumeBtn.innerHTML = trayState.dayTime ? 
             `<div>
                 <<p> Begin Morning Routine ☀️ \n </p>
-                <p> <b> Current Habit Exercise </b> </p>
+                <p> <b> Current Habit Exercise <span> 00:00</span> </b> </p>
             </div>`
             :
             `<div>
                 <p> Start Evening Routine 🌙 \n <p/>
-                <p> <b> Current Habit Exercise </b> </p>
+                <p> <b> Current Habit Exercise <span> 00:00</span> </b> </p>
             </div>`;
-        // resumeBtn.innerHTML += trayData.map(item => item.name).join("\n");
+        habits.forEach(el => {
+            el.classList.toggle('accordion-active', trayState.routineActive);
+        });
+        const habitsList = document.querySelectorAll("accordion__answer");
     } else {
         resumeBtn.className = trayState.dayTime ? 'tray-button primary' : 'tray-button-night primary';
         resumeBtn.innerHTML = trayState.dayTime ? 
             `<div>
                 <p> Pause Morning Routine ☀️ \n </p>
-                <p> <b> Current Habit Exercise </b> </p>
+                <p> <b> Current Habit Exercise <span> 00:00</span> </b> </p>
             </div>`
             :
             `<div>
                 <p> Pause Evening Routine 🌙 \n <p/>
-                <p> <b> Current Habit Exercise </b> </p>
+                <p> <b> Current Habit Exercise <span> 00:00</span> </b> </p>
             </div>`
-        // resumeBtn.innerHTML += trayData.map(item => item.name).join("\n");
+        habits.forEach(el => {
+            el.classList.toggle('accordion-active', trayState.routineActive);
+        });
+        const habitsList = document.getElementById("accordion_answer");
+        habitsList.innerHTML = `
+            <ol>
+                ${trayData.map(item => `<li>${item.name}</li>`).join("")}
+            </ol>
+        `;
+
         // habits.forEach(el => {
         //     el.classList.toggle('accordion-active', trayState.routineActive);
         // });
@@ -320,7 +333,7 @@ function updateUI() {
 
     updateFocusSessionUI();
     updateRoutineSessionUI();
-});
+    });
 }
 
 // Button event handlers
