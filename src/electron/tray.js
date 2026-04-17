@@ -28,16 +28,6 @@ const updateRoutineSessionUI = async () => {
 
     // Resume Habits Button - hide when completed
     // resumeBtn.style.display = trayState.habitsCompleted ? 'none' : 'block';
-    try {
-        const data = await window.api.runRoutine();
-        console.log('Routine data:', data);
-
-        if (data) {
-            console.log('test');
-        }
-    } catch (err) {
-        console.error('Failed to load routine:', err);
-    }
 
     if (!trayState.routineActive) {
         resumeBtn.className = 'tray-button active';
@@ -45,24 +35,47 @@ const updateRoutineSessionUI = async () => {
         habits.forEach(el => {
             el.classList.toggle('accordion-active', trayState.routineActive);
         });
-        // const habitList = document.querySelectorAll(".accordion__answer");
-        // habitList.forEach(container => {
-        //     container.innerHTML = result
-        //         .map(habit => `<li>${habit.name}</li>`)
-        //         .join('');
-        // });
+        const habitList = document.querySelectorAll(".accordion__answer");
+        habitList.forEach(async container => {
+            try {
+                const data = await window.api.runRoutine();
+                console.log('Routine data:', data);
+
+                if (data) {
+                    console.log('test');
+                    container.innerHTML = data
+                        .map(habit => `<li>${habit.name}</li>`)
+                        .join('');
+                }
+            } catch (err) {
+                console.error('Failed to load routine:', err);
+            }
+            container.innerHTML = data
+                .map(habit => `<li>${habit.name}</li>`)
+                .join('');
+        });
     } else {
         resumeBtn.className = 'tray-button primary';
         resumeBtn.textContent = trayState.dayTime ? 'Pause Morning Routine ☀️' : 'Pause Evening Routine 🌙';
         habits.forEach(el => {
             el.classList.toggle('accordion-active', trayState.routineActive);
         });
-        // const habitList = document.querySelectorAll(".accordion__answer");
-        // habitList.forEach(container => {
-        //     container.innerHTML = result
-        //         .map(habit => `<li>${habit.name}</li>`)
-        //         .join('');
-        // });
+        const habitList = document.querySelectorAll(".accordion__answer");
+        habitList.forEach(async container => {
+            try {
+                const data = await window.api.runRoutine();
+                console.log('Routine data:', data);
+
+                if (data) {
+                    console.log('test');
+                    container.innerHTML = data
+                        .map(habit => `<li>${habit.name}</li>`)
+                        .join('');
+                }
+            } catch (err) {
+                console.error('Failed to load routine:', err);
+            }
+        });
     }
 }
 
