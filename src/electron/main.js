@@ -11,6 +11,7 @@ import { focusState } from './focusState.js';
 import SimpleUrlGrabber from './simpleUrlGrabber.js';
 import dotenv from 'dotenv';
 import { promises as fs } from 'fs';
+import Routine from '../services/routine.js'; 
 
 dotenv.config();
 
@@ -66,8 +67,9 @@ app.on("ready", function(){
         show: true,
         webviewTag: true,
         webPreferences: {
-            preload: join(app.getAppPath(), "/src/electron/preload.js"),
+            preload: join(app.getAppPath(), "src/electron/preload.cjs"),
             webSecurity: false,
+            contextIsolation: true,
         },
         devTools: true,
     });
@@ -166,6 +168,12 @@ app.on("ready", function(){
             mainWindow.focus();
         }
     });
+});
+
+const routine = new Routine();
+
+ipcMain.handle('run-routine', async(token) => {
+    return routine.routineLoad(token);
 });
 
 ipcMain.on('quit-channel', function() {

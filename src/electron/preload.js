@@ -160,8 +160,11 @@ const API = {
 
     cleanupAppData: function() {
         return ipcRenderer.invoke('cleanup-app-data');
-    }
-
+    },
+    
+    runRoutine: function () {
+        return ipcRenderer.invoke('run-routine');
+    },
 }
 
 contextBridge.exposeInMainWorld('api', API);

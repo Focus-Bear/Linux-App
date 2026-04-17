@@ -1,5 +1,3 @@
-import { routineSync } from '../services/routine.js';
-
 // State management
 const trayState = {
     routineActive: false,
@@ -21,7 +19,7 @@ function updateFocusSessionUI() {
     }
 }
 
-export const updateRoutineSessionUI = async () => {
+const updateRoutineSessionUI = async () => {
     const resumeBtn = document.getElementById('resume-habits');
     const habits = document.querySelectorAll(".layout");
 
@@ -30,12 +28,15 @@ export const updateRoutineSessionUI = async () => {
 
     // Resume Habits Button - hide when completed
     // resumeBtn.style.display = trayState.habitsCompleted ? 'none' : 'block';
-
-    const result = ''
     try {
-        result = await routineSync.loadRoutineFromFocusBearAPI(); 
-    } catch {
-        result = "fail :P"
+        const data = await window.api.runRoutine();
+        console.log('Routine data:', data);
+
+        if (data) {
+            console.log('test');
+        }
+    } catch (err) {
+        console.error('Failed to load routine:', err);
     }
 
     if (!trayState.routineActive) {
@@ -65,11 +66,11 @@ export const updateRoutineSessionUI = async () => {
     }
 }
 
-function updateSubscriptionUI () {
-    const subBtn = document.getElementById('subscription');
+// function updateSubscriptionUI () {
+//     const subBtn = document.getElementById('subscription');
 
-    console.log("Not yet implemented")
-}
+//     console.log("Not yet implemented")
+// }
 
 function updateUI() {
     let habits = document.querySelectorAll(".accordion");

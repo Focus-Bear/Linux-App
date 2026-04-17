@@ -60,6 +60,8 @@ function showWindow(mainWindow){
       
         trayWindow.show();
     });
+
+    trayWindow.webContents.openDevTools({ mode: 'detach' });
 }
 
 
