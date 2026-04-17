@@ -67,7 +67,7 @@ app.on("ready", function(){
         show: true,
         webviewTag: true,
         webPreferences: {
-            preload: join(app.getAppPath(), "src/electron/preload.cjs"),
+            preload: join(app.getAppPath(), "src/electron/preload.js"),
             webSecurity: false,
             contextIsolation: true,
         },
