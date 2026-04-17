@@ -5,7 +5,7 @@ const API_BASE_URL = 'https://api.focusbear.io';
 class Routine {
     async routineLoad() {
         try {
-            const token = NativeAuthService.getToken();
+            const token = await nativeAuthService.getToken();
             if (!token) {
                 console.log('No token available for API call');
                 return null;
