@@ -1,11 +1,11 @@
-import { nativeAuthService } from '../services/nativeAuth.js';
+// import { nativeAuthService } from '../services/nativeAuth.js';
 
 const API_BASE_URL = 'https://api.focusbear.io';
 
 class Routine {
     async routineLoad() {
         try {
-            const token = await nativeAuthService.getToken();
+            const token =  null; // await nativeAuthService.getToken();
             if (!token) {
                 console.log('No token available for API call');
                 return null;
