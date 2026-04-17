@@ -91,6 +91,40 @@ body {
     border: 1px solid #ddd;
 }
 
+.tray-button-night {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 12px 15px;
+    margin: 8px 0;
+    background: #3a415e;
+    border: none;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    color: white;
+}
+
+.tray-button-night:hover {
+    background: #282e42;
+}
+
+.tray-button-night.primary {
+    background: #535b7c;
+}
+
+.tray-button-night.primary:hover {
+    background: #495274;
+}
+
+.tray-button-night.secondary {
+    background: white;
+    border: 1px solid #ddd;
+}
+
 .info-row {
     display: flex;
     align-items: center;
