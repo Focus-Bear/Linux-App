@@ -5,7 +5,7 @@
  * Connects to Electron app via Unix socket for bidirectional communication
  */
 
-import { appendFileSync } from 'fs';
+import { appendFileSync, readlinkSync } from 'fs';
 import { createConnection } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path'; 
@@ -25,6 +25,7 @@ let appSocket = null;
 let socketBuf = ''; 
 let isConnectedToApp = false;
 let cachedBrowserId = null;
+let browserIdentifiedByHost = false;
 let pendingBlocklistCallback = null;
 let pendingBlocklistTimeout = null;
 
@@ -65,6 +66,32 @@ function log(message) {
     // Ignore
   }
 }
+
+// Browser Identficiation
+const LAUNCH_ARGS = process.argv.slice(2);
+const LAUNCHED_BY_CHROMIUM_FAMILY = LAUNCH_ARGS.some(a => a.startsWith('chrome-extension://'));
+
+function detectBrowserFromParent() {
+  try {
+    const exe = readlinkSync(`/proc/${process.ppid}/exe`).toLowerCase();
+    if (exe.includes('firefox')) return 'firefox';
+    if (exe.includes('chromium')) return 'chromium';
+    if (exe.includes('brave')) return 'brave';
+    if (exe.includes('opera')) return 'opera';
+    if (exe.includes('chrome')) return 'chrome';
+    log(`Parent executable not recognised: ${exe}`);
+  } catch (error) {
+    log(`Could not read parent process: ${error.message}`);
+  }
+  return null;
+}
+
+// Identify the browser from the host's own parent process, so the first handshake and the heartbeat
+// carry the right name instead of waiting for the extension's PING.
+cachedBrowserId = detectBrowserFromParent();
+browserIdentifiedByHost = cachedBrowserId !== null;
+if (!cachedBrowserId && LAUNCHED_BY_CHROMIUM_FAMILY) cachedBrowserId = 'chrome';
+log (`Detected Browser: ${cachedBrowserId ?? 'unknown'} (by host: ${browserIdentifiedByHost})`);
 
 // Connect to Electron app via Unix socket
 function connectToApp() {
@@ -227,8 +254,12 @@ readMessage((message) => {
 
     case 'PING':
       log('Received ping, sending pong');
-      const browserChanged = message.browser && message.browser !== cachedBrowserId;
-      if (message.browser) cachedBrowserId = message.browser;
+      // The host's own detection will win, never accept "firefox" from a Chromium launch.
+      const claimOk = message.browser && !browserIdentifiedByHost && !(LAUNCHED_BY_CHROMIUM_FAMILY && message.browser === 'firefox');
+      const browserChanged = claimOk && message.browser !== cachedBrowserId;
+      if (claimOk) {
+        cachedBrowserId = message.browser;
+      }
       sendMessage({
         type: 'PONG',
         timestamp: Date.now(),

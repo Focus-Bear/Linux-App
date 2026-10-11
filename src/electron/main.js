@@ -38,7 +38,7 @@ let selectedBrowsers = ['firefox']; // persisted from setup; updated via applySe
 
 const BROWSER_PGREP_PATTERNS = {
   firefox:  ['firefox'],
-  chrome:   ['google-chrome'],
+  chrome:   ['google-chrome', '/opt/google/chrome/chrome'],
   chromium: ['chromium'],
   brave:    ['brave'],
   opera:    ['opera'],
@@ -46,7 +46,7 @@ const BROWSER_PGREP_PATTERNS = {
 
 const BROWSER_KILL_TARGETS = {
   firefox:  ['firefox', 'firefox-bin', 'firefox-esr'],
-  chrome:   ['google-chrome'],
+  chrome:   ['chrome', 'google-chrome'],
   chromium: ['chromium', 'chromium-browser'],
   brave:    ['brave', 'brave-browser'],
   opera:    ['opera'],
@@ -136,7 +136,9 @@ async function startSocketServer() {
               console.log(`[Socket] Host identified as ${message.browser} on connect`);
             }
           } else if (message.type === 'PING') {
-            markBrowserConnected(socket, message.browser || 'unknown');
+            if (message.browser && message.browser !== 'unknown') {
+              markBrowserConnected(socket, message.browser);
+            }
           } else if (message.type === 'GET_BLOCKLIST') {
             console.log(`[Socket] Sending blocklist: ${currentBlocklist.length} entries`);
             socket.write(JSON.stringify({
@@ -307,15 +309,15 @@ function startPingMonitor() {
   if (pingMonitorActive) return;
   pingMonitorActive = true;
 
-  // Firefox MV2 background is persistent — detect hung connections via ping silence.
-  // Chrome MV3 SWs sleep and reconnect via alarm; socket-close grace handles disconnect detection.
+  // The host pings every 10 seconds for every browser, so silence means a hung connection.
+  // Chrome MV3 SW sleep/disconnects are covered by the longer socket-close grace instead.
   setInterval(async () => {
     if (extensionWarningActive) return;
     const now = Date.now();
     for (const [, client] of socketClients) {
-      if (client.browser !== 'firefox') continue;
-      if (now - client.lastPing > 20000 && await isBrowserRunning('firefox')) {
-        showExtensionWarning('firefox');
+      if (!client.browser || client.browser === 'unknown') continue;
+      if (now - client.lastPing > 20000 && await isBrowserRunning(client.browser)) {
+        showExtensionWarning(client.browser);
         break;
       }
     }
