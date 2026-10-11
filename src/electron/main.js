@@ -735,7 +735,7 @@ ipcMain.on('focus-session-true', function(event) {
     focusState.setActive(true);
     broadcastFocusState(true);
     isFocusPaused = false;
-    emitSessionEvent('SESSION_START', { durationSeconds: SECONDS_FOR_SESSIONS_WITHOUT_COUNTDOWN, task: ''});
+    emitSessionEvent('SESSION_START', { durationSeconds: SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN, task: ''});
     broadcastBlocklistUpdate(currentBlocklist);
     console.log('Focus session started (native messaging extension)');
 
