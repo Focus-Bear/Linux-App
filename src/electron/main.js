@@ -33,6 +33,7 @@ let pingMonitorActive = false;
 let extensionWarningTimer = null;
 let extensionWarningActive = false;
 let warningBrowserId = null;
+const SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN = 24 * 60 * 60; // Extension needs a duration, sessions with no countdown will be 24 hours
 
 let selectedBrowsers = ['firefox']; // persisted from setup; updated via applySettings
 
@@ -487,7 +488,7 @@ function emitSessionEvent(type, extra = {}, exceptSocket = null) {
 
 // Handles session control requests recieved from the browser extension
 function handleSessionRequest(socket, message) {
-  const detail = { durationSeconds: message.durationSeconds, task: message.task };
+  const detail = { durationSeconds: message.durationSeconds || SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN, task: message.task };
 
   switch (message.type) {
     case 'REQUEST_SESSION_START':
@@ -734,7 +735,7 @@ ipcMain.on('focus-session-true', function(event) {
     focusState.setActive(true);
     broadcastFocusState(true);
     isFocusPaused = false;
-    emitSessionEvent('SESSION_START');
+    emitSessionEvent('SESSION_START', { durationSeconds: SECONDS_FOR_SESSIONS_WITHOUT_COUNTDOWN, task: ''});
     broadcastBlocklistUpdate(currentBlocklist);
     console.log('Focus session started (native messaging extension)');
 
