@@ -112,6 +112,9 @@ async function startSocketServer() {
       timestamp: Date.now()
     }) + '\n');
 
+    // Session last, so the blocklsit is already in place when it starts
+    sendActiveSessionTo(socket);
+
     socket.on('data', (data) => {
       const lines = data.toString().split('\n').filter(line => line.trim());
 
@@ -474,6 +477,65 @@ let isFocusActive = false;
 // Extension session sync (native messaging)
 let isFocusPaused = false;
 
+// Session timing, so a reconnecting browser can be told how much time is left in the current focus session
+let sessionEndsAt = null;
+let sessionRemainingMs = null;
+let sessionTask = '';
+
+function beginSessionTiming(durationSeconds, task) {
+  sessionEndsAt = Date.now() + durationSeconds * 1000;
+  sessionRemainingMs = null;
+  sessionTask = task || '';
+}
+
+function pauseSessionTiming() {
+  if (sessionEndsAt === null ) {
+    return;
+  }
+  sessionRemainingMs = Math.max(0, sessionEndsAt - Date.now());
+}
+
+function resumeSessionTiming() {
+  if (sessionRemainingMs === null) {
+    return;
+  }
+  sessionEndsAt = Date.now() + sessionRemainingMs;
+  sessionRemainingMs = null;
+}
+
+function clearSessionTiming(){
+  sessionEndsAt = null;
+  sessionRemainingMs = null;
+  sessionTask = '';
+}
+
+// Ensure that newly connected browsers are up to date with currently running focus sessions
+function sendActiveSessionTo(socket) {
+  if (!isFocusActive || sessionEndsAt === null) {
+    return;
+  }
+  const remainingMs = isFocusPaused ? (sessionRemainingMs ?? 0) : sessionEndsAt - Date.now();
+  if (remainingMs <= 0) {
+    return;
+  }
+  
+  const send = (type, extra = {}) =>
+    socket.write(JSON.stringify({ type, ...extra, timestamp: Date.now() }) + '\n');
+
+  try {
+    send('SESSION_START', {
+      durationSeconds: Math.ceil(remainingMs / 1000),
+      task: sessionTask,
+    });
+    if (isFocusPaused) {
+      send('SESSION_PAUSE');
+    }
+    console.log(`[Session] Caught up new host (${Math.round(remainingMs / 1000)}s left)`);
+  } catch (e) {
+    console.error('[Session] Failed to catch up host', e);
+  }
+}
+
 // Send a session event to all connected native messaging clients
 function emitSessionEvent(type, extra = {}, exceptSocket = null) {
   const message = JSON.stringify({ type, ...extra, timestamp: Date.now() }) + '\n';
@@ -499,6 +561,7 @@ function handleSessionRequest(socket, message) {
       isFocusActive = true;
       isFocusPaused = false;
       focusState.setActive(true);
+      beginSessionTiming(detail.durationSeconds, detail.task);
       broadcastFocusState(true);
       broadcastBlocklistUpdate(currentBlocklist);
       emitSessionEvent('SESSION_START', detail, socket);
@@ -507,12 +570,14 @@ function handleSessionRequest(socket, message) {
     case 'REQUEST_SESSION_PAUSE':
       if (!isFocusActive || isFocusPaused) { console.log('[Session] PAUSE ignored'); return; }
       isFocusPaused = true;
+      pauseSessionTiming();
       emitSessionEvent('SESSION_PAUSE', {}, socket);
       break;
     
     case 'REQUEST_SESSION_RESUME':
       if (!isFocusActive || !isFocusPaused) { console.log('[Session] RESUME ignored'); return; }
       isFocusPaused = false;
+      resumeSessionTiming();
       emitSessionEvent('SESSION_RESUME', {}, socket);
       break;
     
@@ -520,6 +585,7 @@ function handleSessionRequest(socket, message) {
       if (!isFocusActive) { console.log('[Session] CANCEL ignored'); return; }
       isFocusActive = false;
       isFocusPaused = false;
+      clearSessionTiming();
       focusState.setActive(false);
       broadcastFocusState(false);
       emitSessionEvent('SESSION_CANCEL', {}, socket);
@@ -539,6 +605,7 @@ function handleSessionRequest(socket, message) {
 ipcMain.on('focus-session-pause', function(event, paused) {
   if (!isFocusActive || isFocusPaused === !!paused) return;
   isFocusPaused = !!paused;
+  if (isFocusPaused) pauseSessionTiming(); else resumeSessionTiming();
   emitSessionEvent(isFocusPaused ? 'SESSION_PAUSE' : 'SESSION_RESUME');
 });
 
@@ -724,18 +791,22 @@ ipcMain.on('quit-channel', function() {
     app.quit();
 });
 
-ipcMain.on('focus-session-true', function(event) {
+ipcMain.on('focus-session-true', function(event, opts) {
     if (isFocusActive) {
         event.sender.send('focus-session-result', 'Focus session already active');
         return;
     }
+
+    const durationSeconds = opts?.durationSeconds || SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN;
+    const task = opts?.task || '';
 
     // Native messaging extension handles blocking
     isFocusActive = true;
     focusState.setActive(true);
     broadcastFocusState(true);
     isFocusPaused = false;
-    emitSessionEvent('SESSION_START', { durationSeconds: SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN, task: ''});
+    beginSessionTiming(durationSeconds, task);
+    emitSessionEvent('SESSION_START', { durationSeconds, task});
     broadcastBlocklistUpdate(currentBlocklist);
     console.log('Focus session started (native messaging extension)');
 
@@ -759,6 +830,7 @@ ipcMain.on('focus-session-false', function(event) {
     focusState.setActive(false);
     broadcastFocusState(false);
     isFocusPaused = false;
+    clearSessionTiming();
     emitSessionEvent('SESSION_CANCEL');
     console.log('Focus session ended');
 
@@ -1103,6 +1175,8 @@ ipcMain.handle('cleanup-app-data', async function() {
   try {
     if (isFocusActive) {
       isFocusActive = false;
+      isFocusPaused = false;
+      clearSessionTiming();
       focusState.setActive(false);
       details.push('Stopped active focus session');
     }
