@@ -482,18 +482,33 @@ let sessionEndsAt = null;
 let sessionRemainingMs = null;
 let sessionTask = '';
 let sessionTotalSeconds = null;
+let sessionBreakSeconds = 0;
+let sessionPhase = 'work'; 
 
-function beginSessionTiming(durationSeconds, task) {
+function beginSessionTiming(durationSeconds, task, breakSeconds = 0) {
   sessionEndsAt = Date.now() + durationSeconds * 1000;
   sessionRemainingMs = null;
   sessionTask = task || '';
   sessionTotalSeconds = durationSeconds;
+  sessionBreakSeconds = breakSeconds;
+  sessionPhase = 'work';
+}
+
+function changeSessionPhase() {
+  if (sessionEndsAt === null || sessionRemainingMs !== null) {
+    return;
+  }
+  if (sessionPhase === 'work' && sessionBreakSeconds > 0 && Date.now() >= sessionEndsAt) {
+    sessionPhase = 'break';
+    sessionEndsAt += sessionBreakSeconds * 1000; 
+  }
 }
 
 function pauseSessionTiming() {
   if (sessionEndsAt === null ) {
     return;
   }
+  changeSessionPhase();
   sessionRemainingMs = Math.max(0, sessionEndsAt - Date.now());
 }
 
@@ -510,6 +525,8 @@ function clearSessionTiming(){
   sessionRemainingMs = null;
   sessionTask = '';
   sessionTotalSeconds = null;
+  sessionBreakSeconds = 0;
+  sessionPhase = 'work';
 }
 
 // Ensure that newly connected browsers are up to date with currently running focus sessions
@@ -517,6 +534,7 @@ function sendActiveSessionTo(socket) {
   if (!isFocusActive || sessionEndsAt === null) {
     return;
   }
+  changeSessionPhase();
   const remainingMs = isFocusPaused ? (sessionRemainingMs ?? 0) : sessionEndsAt - Date.now();
   if (remainingMs <= 0) {
     return;
@@ -529,6 +547,8 @@ function sendActiveSessionTo(socket) {
     send('SESSION_START', {
       durationSeconds: Math.ceil(remainingMs / 1000),
       totalSeconds: sessionTotalSeconds,
+      breakSeconds: sessionBreakSeconds,
+      onBreak: sessionPhase === 'break',
       intention: sessionTask,
     });
     if (isFocusPaused) {
@@ -554,7 +574,7 @@ function emitSessionEvent(type, extra = {}, exceptSocket = null) {
 
 // Handles session control requests recieved from the browser extension
 function handleSessionRequest(socket, message) {
-  const detail = { durationSeconds: message.durationSeconds || SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN, task: message.task };
+  const detail = { durationSeconds: message.durationSeconds || SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN, task: message.task, breakSeconds: message.breakSeconds || 0 };
 
   switch (message.type) {
     case 'REQUEST_SESSION_START':
@@ -565,10 +585,10 @@ function handleSessionRequest(socket, message) {
       isFocusActive = true;
       isFocusPaused = false;
       focusState.setActive(true);
-      beginSessionTiming(detail.durationSeconds, detail.task);
+      beginSessionTiming(detail.durationSeconds, detail.task, detail.breakSeconds);
       broadcastFocusState(true);
       broadcastBlocklistUpdate(currentBlocklist);
-      emitSessionEvent('SESSION_START', { durationSeconds: detail.durationSeconds, intention: detail.task }, socket);
+      emitSessionEvent('SESSION_START', { durationSeconds: detail.durationSeconds, breakSeconds: detail.breakSeconds, intention: detail.task }, socket);
       break;
 
     case 'REQUEST_SESSION_PAUSE':
