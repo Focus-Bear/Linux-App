@@ -525,7 +525,7 @@ function sendActiveSessionTo(socket) {
   try {
     send('SESSION_START', {
       durationSeconds: Math.ceil(remainingMs / 1000),
-      task: sessionTask,
+      intention: sessionTask,
     });
     if (isFocusPaused) {
       send('SESSION_PAUSE');
@@ -564,7 +564,7 @@ function handleSessionRequest(socket, message) {
       beginSessionTiming(detail.durationSeconds, detail.task);
       broadcastFocusState(true);
       broadcastBlocklistUpdate(currentBlocklist);
-      emitSessionEvent('SESSION_START', detail, socket);
+      emitSessionEvent('SESSION_START', { durationSeconds: detail.durationSeconds, intention: detail.task }, socket);
       break;
 
     case 'REQUEST_SESSION_PAUSE':
@@ -806,7 +806,7 @@ ipcMain.on('focus-session-true', function(event, opts) {
     broadcastFocusState(true);
     isFocusPaused = false;
     beginSessionTiming(durationSeconds, task);
-    emitSessionEvent('SESSION_START', { durationSeconds, task});
+    emitSessionEvent('SESSION_START', { durationSeconds, intention: task});
     broadcastBlocklistUpdate(currentBlocklist);
     console.log('Focus session started (native messaging extension)');
 
