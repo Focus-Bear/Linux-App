@@ -10,6 +10,7 @@ import { createConnection } from 'net';
 import { tmpdir } from 'os';
 import { join } from 'path'; 
 
+// Must match SOCKET_PATH in main.js 
 const SOCKET_PATH = process.platform === "win32" ? "\\\\.\\pipe\\focusbear" : "/tmp/focusbear.sock";
 
 const LOG_PATH = join(tmpdir(), 'focusbear-native-host.log');
@@ -67,7 +68,7 @@ function log(message) {
   }
 }
 
-// Browser Identficiation
+// Browser identification
 const LAUNCH_ARGS = process.argv.slice(2);
 const LAUNCHED_BY_CHROMIUM_FAMILY = LAUNCH_ARGS.some(a => a.startsWith('chrome-extension://'));
 
@@ -252,7 +253,9 @@ readMessage((message) => {
       });
       break;
 
-    case 'PING':
+    case 'PING': {
+      // Extension-driven: only answers the extension (PONG) and update browser ID
+      // Heartbeat pings to the app come from the heartbeat above, not here
       log('Received ping, sending pong');
       // The host's own detection will win, never accept "firefox" from a Chromium launch.
       const claimOk = message.browser && !browserIdentifiedByHost && !(LAUNCHED_BY_CHROMIUM_FAMILY && message.browser === 'firefox');
@@ -269,6 +272,7 @@ readMessage((message) => {
         appSocket.write(JSON.stringify({ type: 'NATIVE_HOST_CONNECTED', browser: cachedBrowserId }) + '\n');
       }
       break;
+    }
 
     case 'GET_WHITELIST':
       log('Forwarding GET_WHITELIST to app');

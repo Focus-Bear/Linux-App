@@ -76,6 +76,8 @@ async function saveWhitelistToDisk(entries) {
   }
 }
 
+// Besides recording state, this notifies the renderer 
+// and cancels any open extension warning for this browser
 function markBrowserConnected(socket, browser) {
   const client = socketClients.get(socket);
   if (client) client.browser = browser;
@@ -112,7 +114,7 @@ async function startSocketServer() {
       timestamp: Date.now()
     }) + '\n');
 
-    // Session last, so the blocklsit is already in place when it starts
+    // Session last, so the blocklist is already in place when it starts
     sendActiveSessionTo(socket);
 
     socket.on('data', (data) => {
@@ -478,8 +480,9 @@ let isFocusActive = false;
 let isFocusPaused = false;
 
 // Session timing, so a reconnecting browser can be told how much time is left in the current focus session
+// sessionRemainingMs === null -> running, sessionRemainingMs !== null -> paused
 let sessionEndsAt = null;
-let sessionRemainingMs = null;
+let sessionRemainingMs = null; 
 let sessionTask = '';
 let sessionTotalSeconds = null;
 let sessionBreakSeconds = 0;
@@ -572,7 +575,7 @@ function emitSessionEvent(type, extra = {}, exceptSocket = null) {
   console.log(`[Session] ${type} sent to ${sent} clients(s)`);
 }
 
-// Handles session control requests recieved from the browser extension
+// Handles session control requests received from the browser extension
 function handleSessionRequest(socket, message) {
   const detail = { durationSeconds: message.durationSeconds || SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN, task: message.task, breakSeconds: message.breakSeconds || 0 };
 
@@ -625,7 +628,7 @@ function handleSessionRequest(socket, message) {
   }
 }
 
-// Handle Pause/Resume requets from the desktop application's UI
+// Handle Pause/Resume requests from the desktop application's UI
 ipcMain.on('focus-session-pause', function(event, paused) {
   if (!isFocusActive || isFocusPaused === !!paused) return;
   isFocusPaused = !!paused;
@@ -1005,7 +1008,7 @@ function handleAuthRedirect(url) {
     }
 }
 
-//Webiew Handling
+//Webview Handling
 ipcMain.on('switch-webview', function(event, webViewId, metadata) {
     console.log(`[Main Process] switch-webview called for ${webViewId}`);
     console.log(`[Main Process] Metadata:`, {
