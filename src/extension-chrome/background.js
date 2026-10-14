@@ -23,8 +23,8 @@ const BROWSER_ID = (() => {
   return 'chrome';
 })();
 
-function log(message) {
-  console.log('[Focus Bear Extension]', message);
+function log(...args) {
+  console.log('[Focus Bear Extension]', ...args);
 }
 
 function escapeRegex(str) {

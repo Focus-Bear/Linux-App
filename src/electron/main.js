@@ -579,7 +579,7 @@ function handleSessionRequest(socket, message) {
   switch (message.type) {
     case 'REQUEST_SESSION_START':
       if (isFocusActive) { 
-        console.log('[Session START ignored - already running'); 
+        console.log('[Session] START ignored - already running'); 
         return; 
       }
       isFocusActive = true;
@@ -1202,6 +1202,8 @@ ipcMain.handle('cleanup-app-data', async function() {
       isFocusPaused = false;
       clearSessionTiming();
       focusState.setActive(false);
+      broadcastFocusState(false);
+      emitSessionEvent('SESSION_CANCEL');
       details.push('Stopped active focus session');
     }
 
