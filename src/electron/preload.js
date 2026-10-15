@@ -80,13 +80,6 @@ const API = {
         return ipcRenderer.send('focus-session-pause', paused); 
     },
 
-    // Register a listener for session requests recieved from browser extension
-    onExtensionConnected: function(callback) {
-        const handler = function(event, data) { callback(data); };
-        ipcRenderer.on('extension-session-request', handler);
-        return () => ipcRenderer.removeListener('extension-session-request', handler);
-    },
-
     //for url monitoring
     onUrlChanged: function(callback) {
         ipcRenderer.on('url-changed', function(event, data) {

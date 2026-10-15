@@ -1232,6 +1232,33 @@ ipcMain.handle('cleanup-app-data', async function() {
       console.log('Settings file not found or already removed');
     }
 
+    // Remove native messaging files created by installNativeMessaging()
+    const home = homedir();
+    const nativeMessagingPaths = [
+      join(home, '.local', 'share', 'focusbear'),
+      join(home, '.local', 'bin', 'focusbear-native-host'),
+      getWhitelistPath(),
+      ...[
+        '.mozilla/native-messaging-hosts',
+        'snap/firefox/common/.mozilla/native-messaging-hosts',
+        '.config/google-chrome/NativeMessagingHosts',
+        '.config/google-chrome-beta/NativeMessagingHosts',
+        '.config/google-chrome-unstable/NativeMessagingHosts',
+        '.config/chromium/NativeMessagingHosts',
+        '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts',
+        '.config/opera/NativeMessagingHosts',
+      ].map(dir => join(home, dir, 'com.focusbear.host.json')),
+    ];
+
+    for (const target of nativeMessagingPaths) {
+      try {
+        await fs.rm(target, { recursive: true, force: true});
+      } catch (error) {
+        console.log(`Could not remove ${target}:`, error.message);
+      }
+    }
+    details.push('Removed native messaging host and browser connection files');
+
     return {
       success: true,
       message: 'Successfully cleaned up all Focus Bear data',
