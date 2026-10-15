@@ -268,8 +268,11 @@ readMessage((message) => {
         timestamp: Date.now(),
         connectedToApp: isConnectedToApp
       });
-      if (isConnectedToApp && appSocket && browserChanged) {
-        appSocket.write(JSON.stringify({ type: 'NATIVE_HOST_CONNECTED', browser: cachedBrowserId }) + '\n');
+      if (isConnectedToApp && appSocket) {
+        if (browserChanged) {
+          appSocket.write(JSON.stringify({ type: 'NATIVE_HOST_CONNECTED', browser: cachedBrowserId }) + '\n');
+        }
+        appSocket.write(JSON.stringify({ type: 'PING', browser: cachedBrowserId || 'unknown', timestamp: Date.now() }) + '\n');
       }
       break;
     }
