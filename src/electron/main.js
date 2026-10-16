@@ -33,12 +33,13 @@ let pingMonitorActive = false;
 let extensionWarningTimer = null;
 let extensionWarningActive = false;
 let warningBrowserId = null;
+const SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN = 24 * 60 * 60; // Extension needs a duration, sessions with no countdown will be 24 hours
 
 let selectedBrowsers = ['firefox']; // persisted from setup; updated via applySettings
 
 const BROWSER_PGREP_PATTERNS = {
   firefox:  ['firefox'],
-  chrome:   ['google-chrome'],
+  chrome:   ['google-chrome', '/opt/google/chrome/chrome'],
   chromium: ['chromium'],
   brave:    ['brave'],
   opera:    ['opera'],
@@ -46,7 +47,7 @@ const BROWSER_PGREP_PATTERNS = {
 
 const BROWSER_KILL_TARGETS = {
   firefox:  ['firefox', 'firefox-bin', 'firefox-esr'],
-  chrome:   ['google-chrome'],
+  chrome:   ['chrome', 'google-chrome'],
   chromium: ['chromium', 'chromium-browser'],
   brave:    ['brave', 'brave-browser'],
   opera:    ['opera'],
@@ -75,6 +76,19 @@ async function saveWhitelistToDisk(entries) {
   }
 }
 
+// Besides recording state, this notifies the renderer 
+// and cancels any open extension warning for this browser
+function markBrowserConnected(socket, browser) {
+  const client = socketClients.get(socket);
+  if (client) client.browser = browser;
+  browserLastConnected.set(browser, Date.now());
+  if (!connectedBrowsers.has(browser)) {
+    connectedBrowsers.add(browser);
+    if (mainWindow) mainWindow.webContents.send('extension-connected', browser);
+  }
+  if (!warningBrowserId || warningBrowserId === browser) cancelExtensionWarning();
+}
+
 async function startSocketServer() {
   try {
     await unlink(SOCKET_PATH);
@@ -100,6 +114,9 @@ async function startSocketServer() {
       timestamp: Date.now()
     }) + '\n');
 
+    // Session last, so the blocklist is already in place when it starts
+    sendActiveSessionTo(socket);
+
     socket.on('data', (data) => {
       const lines = data.toString().split('\n').filter(line => line.trim());
 
@@ -121,19 +138,13 @@ async function startSocketServer() {
                   socketClients.delete(s);
                 }
               }
-              if (socketClients.has(socket)) socketClients.get(socket).browser = message.browser;
-              browserLastConnected.set(message.browser, Date.now());
+              markBrowserConnected(socket, message.browser);
               console.log(`[Socket] Host identified as ${message.browser} on connect`);
             }
           } else if (message.type === 'PING') {
-            const browser = message.browser || 'unknown';
-            if (socketClients.has(socket)) socketClients.get(socket).browser = browser;
-            browserLastConnected.set(browser, Date.now());
-            if (!connectedBrowsers.has(browser)) {
-              connectedBrowsers.add(browser);
-              if (mainWindow) mainWindow.webContents.send('extension-connected', browser);
+            if (message.browser && message.browser !== 'unknown') {
+              markBrowserConnected(socket, message.browser);
             }
-            if (!warningBrowserId || warningBrowserId === browser) cancelExtensionWarning();
           } else if (message.type === 'GET_BLOCKLIST') {
             console.log(`[Socket] Sending blocklist: ${currentBlocklist.length} entries`);
             socket.write(JSON.stringify({
@@ -153,6 +164,8 @@ async function startSocketServer() {
             currentWhitelist = message.data.filter(e => e.expiresAt > Date.now());
             console.log(`[Socket] Whitelist updated: ${currentWhitelist.length} entries`);
             saveWhitelistToDisk(currentWhitelist);
+          } else if (typeof message.type === 'string' && message.type.startsWith('REQUEST_SESSION_')) {
+            handleSessionRequest(socket, message);
           }
         } catch (error) {
           console.error('[Socket] Error parsing message:', error);
@@ -302,15 +315,15 @@ function startPingMonitor() {
   if (pingMonitorActive) return;
   pingMonitorActive = true;
 
-  // Firefox MV2 background is persistent — detect hung connections via ping silence.
-  // Chrome MV3 SWs sleep and reconnect via alarm; socket-close grace handles disconnect detection.
+  // The host pings every 10 seconds for every browser, so silence means a hung connection.
+  // Chrome MV3 SW sleep/disconnects are covered by the longer socket-close grace instead.
   setInterval(async () => {
     if (extensionWarningActive) return;
     const now = Date.now();
     for (const [, client] of socketClients) {
-      if (client.browser !== 'firefox') continue;
-      if (now - client.lastPing > 20000 && await isBrowserRunning('firefox')) {
-        showExtensionWarning('firefox');
+      if (!client.browser || client.browser === 'unknown') continue;
+      if (now - client.lastPing > 20000 && await isBrowserRunning(client.browser)) {
+        showExtensionWarning(client.browser);
         break;
       }
     }
@@ -377,7 +390,7 @@ async function installNativeMessaging() {
 
     // Write Firefox manifest to all known locations (regular + snap)
     const firefoxManifest = JSON.stringify({
-      name: 'com.focusbear.native_host',
+      name: 'com.focusbear.host',
       description: 'Focus Bear Native Messaging Host',
       path: wrapperPath,
       type: 'stdio',
@@ -388,12 +401,12 @@ async function installNativeMessaging() {
       join(homedir(), 'snap', 'firefox', 'common', '.mozilla', 'native-messaging-hosts'),
     ]) {
       await fs.mkdir(dir, { recursive: true }).catch(() => {});
-      await fs.writeFile(join(dir, 'com.focusbear.native_host.json'), firefoxManifest).catch(() => {});
+      await fs.writeFile(join(dir, 'com.focusbear.host.json'), firefoxManifest).catch(() => {});
     }
 
     // Write Chrome/Chromium native messaging manifests
     const chromeManifest = JSON.stringify({
-      name: 'com.focusbear.native_host',
+      name: 'com.focusbear.host',
       description: 'Focus Bear Native Messaging Host',
       path: wrapperPath,
       type: 'stdio',
@@ -408,7 +421,7 @@ async function installNativeMessaging() {
       join(homedir(), '.config', 'opera', 'NativeMessagingHosts'),
     ]) {
       await fs.mkdir(dir, { recursive: true }).catch(() => {});
-      await fs.writeFile(join(dir, 'com.focusbear.native_host.json'), chromeManifest).catch(() => {});
+      await fs.writeFile(join(dir, 'com.focusbear.host.json'), chromeManifest).catch(() => {});
     }
 
     // Copy Chrome extension files and pack as .zip
@@ -462,6 +475,166 @@ const urlGrabber = new SimpleUrlGrabber();
 
 // Unified focus session state
 let isFocusActive = false;
+
+// Extension session sync (native messaging)
+let isFocusPaused = false;
+
+// Session timing, so a reconnecting browser can be told how much time is left in the current focus session
+// sessionRemainingMs === null -> running, sessionRemainingMs !== null -> paused
+let sessionEndsAt = null;
+let sessionRemainingMs = null; 
+let sessionTask = '';
+let sessionTotalSeconds = null;
+let sessionBreakSeconds = 0;
+let sessionPhase = 'work'; 
+
+function beginSessionTiming(durationSeconds, task, breakSeconds = 0) {
+  sessionEndsAt = Date.now() + durationSeconds * 1000;
+  sessionRemainingMs = null;
+  sessionTask = task || '';
+  sessionTotalSeconds = durationSeconds;
+  sessionBreakSeconds = breakSeconds;
+  sessionPhase = 'work';
+}
+
+function changeSessionPhase() {
+  if (sessionEndsAt === null || sessionRemainingMs !== null) {
+    return;
+  }
+  if (sessionPhase === 'work' && sessionBreakSeconds > 0 && Date.now() >= sessionEndsAt) {
+    sessionPhase = 'break';
+    sessionEndsAt += sessionBreakSeconds * 1000; 
+  }
+}
+
+function pauseSessionTiming() {
+  if (sessionEndsAt === null ) {
+    return;
+  }
+  changeSessionPhase();
+  sessionRemainingMs = Math.max(0, sessionEndsAt - Date.now());
+}
+
+function resumeSessionTiming() {
+  if (sessionRemainingMs === null) {
+    return;
+  }
+  sessionEndsAt = Date.now() + sessionRemainingMs;
+  sessionRemainingMs = null;
+}
+
+function clearSessionTiming(){
+  sessionEndsAt = null;
+  sessionRemainingMs = null;
+  sessionTask = '';
+  sessionTotalSeconds = null;
+  sessionBreakSeconds = 0;
+  sessionPhase = 'work';
+}
+
+// Ensure that newly connected browsers are up to date with currently running focus sessions
+function sendActiveSessionTo(socket) {
+  if (!isFocusActive || sessionEndsAt === null) {
+    return;
+  }
+  changeSessionPhase();
+  const remainingMs = isFocusPaused ? (sessionRemainingMs ?? 0) : sessionEndsAt - Date.now();
+  if (remainingMs <= 0) {
+    return;
+  }
+  
+  const send = (type, extra = {}) =>
+    socket.write(JSON.stringify({ type, ...extra, timestamp: Date.now() }) + '\n');
+
+  try {
+    send('SESSION_START', {
+      durationSeconds: Math.ceil(remainingMs / 1000),
+      totalSeconds: sessionTotalSeconds,
+      breakSeconds: sessionBreakSeconds,
+      onBreak: sessionPhase === 'break',
+      intention: sessionTask,
+    });
+    if (isFocusPaused) {
+      send('SESSION_PAUSE');
+    }
+    console.log(`[Session] Caught up new host (${Math.round(remainingMs / 1000)}s left)`);
+  } catch (e) {
+    console.error('[Session] Failed to catch up host', e);
+  }
+}
+
+// Send a session event to all connected native messaging clients
+function emitSessionEvent(type, extra = {}, exceptSocket = null) {
+  const message = JSON.stringify({ type, ...extra, timestamp: Date.now() }) + '\n';
+  let sent = 0;
+  for (const socket of socketClients.keys()) {
+    if (socket === exceptSocket) continue;
+    try { socket.write(message); sent++; } catch (e) { 
+      console.error('[Session] emit failed:', e); }
+  }
+  console.log(`[Session] ${type} sent to ${sent} clients(s)`);
+}
+
+// Handles session control requests received from the browser extension
+function handleSessionRequest(socket, message) {
+  const detail = { durationSeconds: message.durationSeconds || SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN, task: message.task, breakSeconds: message.breakSeconds || 0 };
+
+  switch (message.type) {
+    case 'REQUEST_SESSION_START':
+      if (isFocusActive) { 
+        console.log('[Session] START ignored - already running'); 
+        return; 
+      }
+      isFocusActive = true;
+      isFocusPaused = false;
+      focusState.setActive(true);
+      beginSessionTiming(detail.durationSeconds, detail.task, detail.breakSeconds);
+      broadcastFocusState(true);
+      broadcastBlocklistUpdate(currentBlocklist);
+      emitSessionEvent('SESSION_START', { durationSeconds: detail.durationSeconds, breakSeconds: detail.breakSeconds, intention: detail.task }, socket);
+      break;
+
+    case 'REQUEST_SESSION_PAUSE':
+      if (!isFocusActive || isFocusPaused) { console.log('[Session] PAUSE ignored'); return; }
+      isFocusPaused = true;
+      pauseSessionTiming();
+      emitSessionEvent('SESSION_PAUSE', {}, socket);
+      break;
+    
+    case 'REQUEST_SESSION_RESUME':
+      if (!isFocusActive || !isFocusPaused) { console.log('[Session] RESUME ignored'); return; }
+      isFocusPaused = false;
+      resumeSessionTiming();
+      emitSessionEvent('SESSION_RESUME', {}, socket);
+      break;
+    
+    case 'REQUEST_SESSION_CANCEL':
+      if (!isFocusActive) { console.log('[Session] CANCEL ignored'); return; }
+      isFocusActive = false;
+      isFocusPaused = false;
+      clearSessionTiming();
+      focusState.setActive(false);
+      broadcastFocusState(false);
+      emitSessionEvent('SESSION_CANCEL', {}, socket);
+      break;
+    
+    default:
+      return;
+  }
+
+  // Let the UI pick up the duration / task if it listens
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('extension-session-request', { action: message.type, ...detail });
+  }
+}
+
+// Handle Pause/Resume requests from the desktop application's UI
+ipcMain.on('focus-session-pause', function(event, paused) {
+  if (!isFocusActive || isFocusPaused === !!paused) return;
+  isFocusPaused = !!paused;
+  if (isFocusPaused) pauseSessionTiming(); else resumeSessionTiming();
+  emitSessionEvent(isFocusPaused ? 'SESSION_PAUSE' : 'SESSION_RESUME');
+});
 
 function getWebviewContainerBounds() {
     const bounds = mainWindow.getBounds();
@@ -645,16 +818,22 @@ ipcMain.on('quit-channel', function() {
     app.quit();
 });
 
-ipcMain.on('focus-session-true', function(event) {
+ipcMain.on('focus-session-true', function(event, opts) {
     if (isFocusActive) {
         event.sender.send('focus-session-result', 'Focus session already active');
         return;
     }
 
+    const durationSeconds = opts?.durationSeconds || SECONDS_FOR_SESSION_WITHOUT_COUNTDOWN;
+    const task = opts?.task || '';
+
     // Native messaging extension handles blocking
     isFocusActive = true;
     focusState.setActive(true);
     broadcastFocusState(true);
+    isFocusPaused = false;
+    beginSessionTiming(durationSeconds, task);
+    emitSessionEvent('SESSION_START', { durationSeconds, intention: task});
     broadcastBlocklistUpdate(currentBlocklist);
     console.log('Focus session started (native messaging extension)');
 
@@ -677,6 +856,9 @@ ipcMain.on('focus-session-false', function(event) {
     isFocusActive = false;
     focusState.setActive(false);
     broadcastFocusState(false);
+    isFocusPaused = false;
+    clearSessionTiming();
+    emitSessionEvent('SESSION_CANCEL');
     console.log('Focus session ended');
 
     try {
@@ -826,7 +1008,7 @@ function handleAuthRedirect(url) {
     }
 }
 
-//Webiew Handling
+//Webview Handling
 ipcMain.on('switch-webview', function(event, webViewId, metadata) {
     console.log(`[Main Process] switch-webview called for ${webViewId}`);
     console.log(`[Main Process] Metadata:`, {
@@ -1020,7 +1202,11 @@ ipcMain.handle('cleanup-app-data', async function() {
   try {
     if (isFocusActive) {
       isFocusActive = false;
+      isFocusPaused = false;
+      clearSessionTiming();
       focusState.setActive(false);
+      broadcastFocusState(false);
+      emitSessionEvent('SESSION_CANCEL');
       details.push('Stopped active focus session');
     }
 
@@ -1045,6 +1231,33 @@ ipcMain.handle('cleanup-app-data', async function() {
     } catch (error) {
       console.log('Settings file not found or already removed');
     }
+
+    // Remove native messaging files created by installNativeMessaging()
+    const home = homedir();
+    const nativeMessagingPaths = [
+      join(home, '.local', 'share', 'focusbear'),
+      join(home, '.local', 'bin', 'focusbear-native-host'),
+      getWhitelistPath(),
+      ...[
+        '.mozilla/native-messaging-hosts',
+        'snap/firefox/common/.mozilla/native-messaging-hosts',
+        '.config/google-chrome/NativeMessagingHosts',
+        '.config/google-chrome-beta/NativeMessagingHosts',
+        '.config/google-chrome-unstable/NativeMessagingHosts',
+        '.config/chromium/NativeMessagingHosts',
+        '.config/BraveSoftware/Brave-Browser/NativeMessagingHosts',
+        '.config/opera/NativeMessagingHosts',
+      ].map(dir => join(home, dir, 'com.focusbear.host.json')),
+    ];
+
+    for (const target of nativeMessagingPaths) {
+      try {
+        await fs.rm(target, { recursive: true, force: true});
+      } catch (error) {
+        console.log(`Could not remove ${target}:`, error.message);
+      }
+    }
+    details.push('Removed native messaging host and browser connection files');
 
     return {
       success: true,

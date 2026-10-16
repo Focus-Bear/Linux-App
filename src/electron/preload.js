@@ -70,9 +70,14 @@ const API = {
     },
 
     //For Focus Session
-    toggleFocusSession: function(flag) {
-      if (flag){return ipcRenderer.send("focus-session-true")}
-      else {return ipcRenderer.send("focus-session-false")}
+    toggleFocusSession: function(flag, opts) {
+      if (flag){return ipcRenderer.send("focus-session-true", opts);}
+      else {return ipcRenderer.send("focus-session-false");}
+    },
+
+    // Send a pause request 
+    setFocusPaused: function(paused) {
+        return ipcRenderer.send('focus-session-pause', paused); 
     },
 
     //for url monitoring

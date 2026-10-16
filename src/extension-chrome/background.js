@@ -9,7 +9,7 @@ let isConnected = false;
 let isConnectedToApp = false;
 
 const WHITELIST_DURATION_MS = 30 * 60 * 1000;
-const NATIVE_HOST = 'com.focusbear.native_host';
+const NATIVE_HOST = 'com.focusbear.host';
 
 // Detect which Chromium-based browser we're in so Electron knows which process to kill.
 // UA strings are useless here — Chromium's UA is identical to Chrome's.
@@ -23,8 +23,8 @@ const BROWSER_ID = (() => {
   return 'chrome';
 })();
 
-function log(message) {
-  console.log('[Focus Bear Extension]', message);
+function log(...args) {
+  console.log('[Focus Bear Extension]', ...args);
 }
 
 function escapeRegex(str) {

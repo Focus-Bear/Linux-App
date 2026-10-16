@@ -36,7 +36,7 @@ async function install() {
 
     // 2. Install Firefox manifest pointing to the user-local wrapper
     const firefoxManifestDir = join(homedir(), '.mozilla', 'native-messaging-hosts');
-    const targetManifestPath = join(firefoxManifestDir, 'com.focusbear.native_host.json');
+    const targetManifestPath = join(firefoxManifestDir, 'com.focusbear.host.json');
 
     console.log(`\n🦊 Installing Firefox native messaging manifest...`);
     console.log(`   Target: ${targetManifestPath}`);
@@ -45,7 +45,7 @@ async function install() {
 
     // Generate manifest with the actual wrapper path (varies per user / dev vs packaged)
     const manifest = {
-      name: 'com.focusbear.native_host',
+      name: 'com.focusbear.host',
       description: 'Focus Bear Native Messaging Host',
       path: targetHostPath,
       type: 'stdio',
@@ -54,63 +54,11 @@ async function install() {
     await fs.writeFile(targetManifestPath, JSON.stringify(manifest, null, 2));
     console.log(`   ✓ Manifest installed`);
 
-    // 3. Register extension with all Firefox profiles via proxy file
-    // Firefox reads <profile>/extensions/<extension-id> — its content is the path to the
-    // unpacked extension directory, which tells Firefox where to sideload it from.
-    const extensionId = 'focusbear@focusbear.io';
-    const extensionDir = join(__dirname, '..', 'extension');
-
-    // Support both standard Firefox and Snap Firefox profile locations
-    const firefoxBaseDirs = [
-      join(homedir(), '.mozilla', 'firefox'),
-      join(homedir(), 'snap', 'firefox', 'common', '.mozilla', 'firefox'),
-    ];
-
-    console.log(`\n🧩 Registering Firefox extension...`);
-    console.log(`   Extension path: ${extensionDir}`);
-
-    let registeredCount = 0;
-    for (const baseDir of firefoxBaseDirs) {
-      const iniContent = await fs.readFile(join(baseDir, 'profiles.ini'), 'utf8').catch(() => null);
-      if (!iniContent) continue;
-
-      // Parse profiles.ini — collect one absolute path per [Profile*] section
-      const profileDirs = [];
-      let profilePath = null, isRelative = '0';
-      for (const line of iniContent.split('\n')) {
-        const t = line.trim();
-        if (t.startsWith('[') && !t.startsWith('[General') && !t.startsWith('[Install')) {
-          if (profilePath) {
-            profileDirs.push(isRelative === '1' ? join(baseDir, profilePath) : profilePath);
-            profilePath = null; isRelative = '0';
-          }
-        } else if (t.startsWith('Path=')) {
-          profilePath = t.slice(5);
-        } else if (t.startsWith('IsRelative=')) {
-          isRelative = t.slice(11);
-        }
-      }
-      if (profilePath) profileDirs.push(isRelative === '1' ? join(baseDir, profilePath) : profilePath);
-
-      for (const profileDir of profileDirs) {
-        const proxyFile = join(profileDir, 'extensions', extensionId);
-        await fs.mkdir(dirname(proxyFile), { recursive: true }).catch(() => {});
-        await fs.writeFile(proxyFile, extensionDir).catch(() => {});
-        console.log(`   ✓ Registered in: ${profileDir}`);
-        registeredCount++;
-      }
-    }
-
-    if (registeredCount === 0) {
-      console.log(`   ℹ️  No Firefox profiles found.`);
-      console.log(`   Load manually: Firefox → about:debugging → Load Temporary Add-on`);
-      console.log(`   Select: ${join(extensionDir, 'manifest.json')}`);
-    } else {
-      console.log(`   ℹ️  Restart Firefox to apply. If prompted to enable the extension, click Allow.`);
+    for (const stale of ['com.focusbear.native_host.json', 'com.focusbear.native.json']) {
+      await fs.rm(join(firefoxManifestDir, stale), { force: true });
     }
 
     console.log(`✅ Installation complete!\n`);
-    console.log(`Extension files: ${extensionDir}`);
     console.log(`Native host:     ${targetHostPath}`);
     console.log(`Firefox manifest: ${targetManifestPath}\n`);
 

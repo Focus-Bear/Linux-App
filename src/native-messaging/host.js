@@ -5,14 +5,28 @@
  * Connects to Electron app via Unix socket for bidirectional communication
  */
 
-import { appendFileSync } from 'fs';
+import { appendFileSync, readlinkSync } from 'fs';
 import { createConnection } from 'net';
+import { tmpdir } from 'os';
+import { join } from 'path'; 
 
-const SOCKET_PATH = '/tmp/focusbear.sock';
+// Must match SOCKET_PATH in main.js 
+const SOCKET_PATH = process.platform === "win32" ? "\\\\.\\pipe\\focusbear" : "/tmp/focusbear.sock";
+
+const LOG_PATH = join(tmpdir(), 'focusbear-native-host.log');
+
+const SESSION_REQUESTS = new Set ([
+  'REQUEST_SESSION_START',
+  'REQUEST_SESSION_PAUSE',
+  'REQUEST_SESSION_RESUME',
+  'REQUEST_SESSION_CANCEL'
+]);
 
 let appSocket = null;
+let socketBuf = ''; 
 let isConnectedToApp = false;
 let cachedBrowserId = null;
+let browserIdentifiedByHost = false;
 let pendingBlocklistCallback = null;
 let pendingBlocklistTimeout = null;
 
@@ -47,10 +61,38 @@ function readMessage(callback) {
 
 // Log to a file since stdout is used for messaging
 function log(message) {
-  const logPath = '/tmp/focusbear-native-host.log';
-  const timestamp = new Date().toISOString();
-  appendFileSync(logPath, `[${timestamp}] ${message}\n`);
+  try {
+    appendFileSync(LOG_PATH, `[${new Date().toISOString()}] ${message}\n`);
+  } catch {
+    // Ignore
+  }
 }
+
+// Browser identification
+const LAUNCH_ARGS = process.argv.slice(2);
+const LAUNCHED_BY_CHROMIUM_FAMILY = LAUNCH_ARGS.some(a => a.startsWith('chrome-extension://'));
+
+function detectBrowserFromParent() {
+  try {
+    const exe = readlinkSync(`/proc/${process.ppid}/exe`).toLowerCase();
+    if (exe.includes('firefox')) return 'firefox';
+    if (exe.includes('chromium')) return 'chromium';
+    if (exe.includes('brave')) return 'brave';
+    if (exe.includes('opera')) return 'opera';
+    if (exe.includes('chrome')) return 'chrome';
+    log(`Parent executable not recognised: ${exe}`);
+  } catch (error) {
+    log(`Could not read parent process: ${error.message}`);
+  }
+  return null;
+}
+
+// Identify the browser from the host's own parent process, so the first handshake and the heartbeat
+// carry the right name instead of waiting for the extension's PING.
+cachedBrowserId = detectBrowserFromParent();
+browserIdentifiedByHost = cachedBrowserId !== null;
+if (!cachedBrowserId && LAUNCHED_BY_CHROMIUM_FAMILY) cachedBrowserId = 'chrome';
+log (`Detected Browser: ${cachedBrowserId ?? 'unknown'} (by host: ${browserIdentifiedByHost})`);
 
 // Connect to Electron app via Unix socket
 function connectToApp() {
@@ -59,6 +101,7 @@ function connectToApp() {
   appSocket = createConnection(SOCKET_PATH);
 
   appSocket.on('connect', () => {
+    socketBuf = '';
     log('Connected to Electron app via socket');
     isConnectedToApp = true;
 
@@ -67,9 +110,11 @@ function connectToApp() {
   });
 
   appSocket.on('data', (data) => {
-    const lines = data.toString().split('\n').filter(line => line.trim());
+    socketBuf += data.toString('utf8');
+    const lines = socketBuf.split('\n');
+    socketBuf = lines.pop();
 
-    lines.forEach(line => {
+    lines.filter(line => line.trim()).forEach(line => {
       try {
         const message = JSON.parse(line);
         log(`Received from app: ${JSON.stringify(message)}`);
@@ -103,6 +148,9 @@ function connectToApp() {
             pendingBlocklistTimeout = null;
             cb(null, message.data);
           }
+        } else if (typeof message.type === 'string' && message.type.startsWith('SESSION_')) {
+          log(`Forwarding ${message.type} to extension`);
+          sendMessage({ ...message, timestamp: message.timestamp ?? Date.now() });
         }
       } catch (error) {
         log(`Error parsing socket message: ${error.message}`);
@@ -117,6 +165,7 @@ function connectToApp() {
 
   appSocket.on('close', () => {
     log('Socket connection closed. Will retry...');
+    socketBuf = '';
     isConnectedToApp = false;
     appSocket = null;
 
@@ -163,9 +212,26 @@ process.stdin.on('end', () => {
 // Connect to Electron app
 connectToApp();
 
+// Setup Heartbeat for extension detection.
+setInterval(() => {
+  if (isConnectedToApp && appSocket && cachedBrowserId) {
+    appSocket.write(JSON.stringify({ type: 'PING', browser: cachedBrowserId, timestamp: Date.now() }) + '\n');
+  }
+}, 10000);
+
 // Handle messages from the extension
 readMessage((message) => {
   log(`Received from extension: ${JSON.stringify(message)}`);
+
+  if (SESSION_REQUESTS.has(message.type)) {
+    if (isConnectedToApp && appSocket) {
+      appSocket.write(JSON.stringify({ ...message, timestamp: Date.now() }) + '\n');
+    } else {
+      log(`Not connected to app, ${message.type} not forwarded`);
+      sendMessage({ type: 'ERROR', error: "Not connected to app", requestType: message.type});
+    }
+    return;
+  }
 
   switch (message.type) {
     case 'GET_BLOCKLIST':
@@ -187,18 +253,26 @@ readMessage((message) => {
       });
       break;
 
-    case 'PING':
+    case 'PING': {
+      // Extension-driven: only answers the extension (PONG) and update browser ID
+      // Heartbeat pings to the app come from the heartbeat above, not here
       log('Received ping, sending pong');
-      if (message.browser) cachedBrowserId = message.browser;
+      // The host's own detection will win, never accept "firefox" from a Chromium launch.
+      const claimOk = message.browser && !browserIdentifiedByHost && !(LAUNCHED_BY_CHROMIUM_FAMILY && message.browser === 'firefox');
+      const browserChanged = claimOk && message.browser !== cachedBrowserId;
+      if (claimOk) {
+        cachedBrowserId = message.browser;
+      }
       sendMessage({
         type: 'PONG',
         timestamp: Date.now(),
         connectedToApp: isConnectedToApp
       });
-      if (isConnectedToApp && appSocket) {
-        appSocket.write(JSON.stringify({ type: 'PING', browser: cachedBrowserId || 'unknown', timestamp: Date.now() }) + '\n');
+      if (isConnectedToApp && appSocket && browserChanged) {
+        appSocket.write(JSON.stringify({ type: 'NATIVE_HOST_CONNECTED', browser: cachedBrowserId }) + '\n');
       }
       break;
+    }
 
     case 'GET_WHITELIST':
       log('Forwarding GET_WHITELIST to app');

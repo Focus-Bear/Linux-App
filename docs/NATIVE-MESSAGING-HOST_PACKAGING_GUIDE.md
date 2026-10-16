@@ -19,19 +19,35 @@ Previously the installer copied `host.js` to `/usr/local/bin` and required root.
 **Files written on first launch:**
 
 ```
-~/.local/bin/focusbear-native-host          ← wrapper script (calls node host.js)
-~/.local/share/focusbear/native-messaging/  ← host.js + package.json
-~/.local/share/focusbear/extension/         ← extension source files
-~/.local/share/focusbear/focusbear-extension.xpi  ← zipped extension for snap Firefox
-~/.mozilla/native-messaging-hosts/com.focusbear.native_host.json
-~/snap/firefox/common/.mozilla/native-messaging-hosts/com.focusbear.native_host.json
+~/.local/bin/focusbear-native-host                 ← launcher (runs node on host.js)
+~/.local/share/focusbear/native-messaging/         ← host.js + package.json
+~/.local/share/focusbear/extension/                ← Legacy Firefox extension files
+~/.local/share/focusbear/extension-chrome/         ← Legacy Chrome-family extension files
+~/.local/share/focusbear/focusbear-extension.xpi   ← zipped Legacy Firefox extension (for manual installs)
+~/.local/share/focusbear/focusbear-extension-chrome.zip ← zipped Legacy Chrome-family extension
+
+# Native messaging manifests (com.focusbear.host.json):
+~/.mozilla/native-messaging-hosts/
+~/snap/firefox/common/.mozilla/native-messaging-hosts/
+~/.config/google-chrome/NativeMessagingHosts/
+~/.config/google-chrome-beta/NativeMessagingHosts/
+~/.config/google-chrome-unstable/NativeMessagingHosts/
+~/.config/chromium/NativeMessagingHosts/
+~/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts/
+~/.config/opera/NativeMessagingHosts/
 ```
 
-Both the standard and snap Firefox manifest locations are written so the native host works regardless of how Firefox was installed.
+Notes:
+- The Firefox manifest allows the add-on ID `focusbear@focusbear.io`. The Chromium-family manifests allow one extension origin, set by `CHROME_EXTENSION_ID` in `src/electron/main.js`.
+- Everything is rewritten on every launch, so manifests and copies stay in sync with the packaged version. Local edits to these files do not survive a restart.
+- The launcher calls `node`, so Node.js must be installed.
+- The `.xpi` and `.zip` need the system `zip` binary. They exist for manual installs of the legacy extensions (snap Firefox's file portal can only hand over one file, so the extension is zipped into a single `.xpi`).
 
-### 2. Firefox Extension Loading
+### 2. Extension Installation
 
-Because snap Firefox's XDG portal only grants access to a single file at a time, the extension files are zipped into `focusbear-extension.xpi` on startup using the system `zip` binary.
+The first-run setup screen asks which browsers the user uses and guides them through adding the **Focus Bear** extension to each. It waits until the extension connects to the app and then lets the user continue. Developers can load unpacked builds instead; see [BLOCKING.md](BLOCKING.md#development-setup).
+
+> **Legacy:** the steps below load the earlier Firefox extension from the app's `.xpi`, not the unified extension.
 
 **To load the extension in Firefox:**
 1. Open `about:debugging#/runtime/this-firefox`
@@ -115,7 +131,7 @@ cat /usr/bin/focusbear
 grep '^Exec' /usr/share/applications/focusbear.desktop
 
 # Check system-wide Firefox manifest
-cat /usr/lib/mozilla/native-messaging-hosts/com.focusbear.native_host.json
+cat /usr/lib/mozilla/native-messaging-hosts/com.focusbear.host.json
 
 # Launch app and check per-user files are created
 focusbear &

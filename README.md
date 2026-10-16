@@ -11,7 +11,7 @@ A lightweight, browser-native URL blocking application for Linux using Electron 
 ### Prerequisites
 
 - Node.js v20+ (for development)
-- Firefox or Chrome/Chromium browser
+- Firefox, Chrome, Chromium, Brave or Opera
 - System libraries (see [System Dependencies](#system-dependencies))
 
 ### Development
@@ -59,8 +59,8 @@ Focus Bear uses a **native messaging bridge** to enable browser-based URL blocki
                      │ Native Messaging Protocol
                      │
 ┌────────────────────▼─────────────────────────────────────────┐
-│ Browser Extension (Firefox/Chrome)                           │
-│ (blocks URLs using WebExtensions webRequest API)            │
+│ Browser Extension (Firefox, Chrome, Chromium, Brave, Opera)  │
+│                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,7 +71,7 @@ Focus Bear uses a **native messaging bridge** to enable browser-based URL blocki
 | Performance | ~0% overhead | 70x slowdown |
 | Setup | One-click | Manual proxy + cert config |
 | Security | No MITM | Requires custom CA trust |
-| Sandboxing | Works with Flatpak/Snap | Breaks with sandboxed browsers |
+| Sandboxing | Works with snap Firefox | Breaks with sandboxed browsers |
 
 ---
 
@@ -100,29 +100,29 @@ Install missing dependencies now? (requires sudo) [Y/n]
 
 ### 2. Post-Installation Setup
 
-After installation, the app automatically:
-- Creates `/usr/bin/focusbear` wrapper script
-- Installs native messaging host
-- Configures Firefox/Chrome manifests
-- Creates `~/.local/share/focusbear/` with extension files
+**At package install (deb/rpm, runs as root):**
+- Creates a `/usr/bin/focusbear` launcher script
+- Installs a system-wide native host launcher at `/usr/local/bin/focusbear-native-host` and a Firefox manifest in `/usr/lib/mozilla/native-messaging-hosts/`
+- Installs an optional systemd user unit (`/usr/lib/systemd/user/focusbear.service`). It is not enabled automatically: `systemctl --user enable --now focusbear`
+
+**On every app launch (all formats, including AppImage; per user, no root needed):**
+- Copies the native host to `~/.local/share/focusbear/`, along with the earlier per-browser extension (legacy)
+- Writes the host launcher `~/.local/bin/focusbear-native-host`
+- Writes native messaging manifests for Firefox (regular and snap), Chrome (stable, beta, unstable), Chromium, Brave and Opera. The Chromium-family manifests only allow the production extension ID (see [Development](docs/BLOCKING.md#development-setup) if you load a development build)
+- Packs those legacy extensions into focusbear-extension.xpi and focusbear-extension-chrome.zip using zip (legacy)
+
+The native host runs under `node`, so Node.js must be installed. The deb/rpm packages declare it as a dependency; AppImage users need to install it themselves.
 
 **First launch:**
 ```bash
 focusbear &
 ```
 
-### 3. Load Extension in Firefox
+### 3. Add the Browser Extension
 
-1. Open Firefox → `about:debugging#/runtime/this-firefox`
-2. Click **"Load Temporary Add-on"**
-3. Select `~/.local/share/focusbear/focusbear-extension.xpi`
+On first launch, the setup screen asks which browsers you use (Firefox, Chrome, Chromium, Brave or Opera) and shows where to get the **Focus Bear extension** for each one. Add the extension from the link shown. The screen confirms once the extension has connected to the app, and you can continue after every browser you selected is connected.
 
-### 4. Load Extension in Chrome
-
-1. Open Chrome → `chrome://extensions/`
-2. Enable **"Developer mode"** (top right)
-3. Click **"Load unpacked"**
-4. Select `~/.local/share/focusbear/extension/`
+Developers loading unpacked builds should follow [docs/BLOCKING.md](docs/BLOCKING.md#development-setup) instead.
 
 ---
 
@@ -162,20 +162,20 @@ sudo zypper install -y \
 
 ### In the App
 
-1. **Add URLs to block** in the blocklist
-2. **Export domains** to sync with browser
-3. **Enable focus sessions** to activate blocking
-4. **Whitelist exceptions** as needed
-
-### In the Browser Extension
-
-- Green status ✅ = Connected to native host
-- Red status ❌ = Connection lost (restart the app)
-- View current blocklist directly in extension popup
+1. **Add URLs to block** under **Blocks → Super Distracting Sites**. The list is sent to every connected browser extension when you save it
+2. **Start, or stop focus session** from the app or the system tray
+3. Focus Bear watches the extension in each browser you selected during setup. If an extension disconnects (disabled, removed, or crashed) while its browser is running, Focus Bear shows a warning and closes that browser after 30 seconds
 
 ---
 
 ## Uninstallation
+
+Do these in order:
+
+1. **Clean up app data.** Open **Settings → Uninstall** and click **Clean Up App Data**. This stops any running focus session and deletes your local settings and whitelist, the native host and extension copies in `~/.local/share/focusbear/`, the `~/.local/bin/focusbear-native-host` launcher, and the native messaging manifests for every supported browser.
+2. **Quit Focus Bear** (system tray → **Quit**). Do this *before* removing the extension. While the app is running, removing the extension triggers the "extension disconnected" warning, and the browser is closed after 30 seconds.
+3. **Remove the browser extension** (Firefox: `about:addons`; Chromium browsers: `chrome://extensions`, `brave://extensions` or `opera://extensions`). Settings synced to your Focus Bear account are not deleted.
+4. **Remove the application:**
 
 ### Via Package Manager
 
@@ -188,15 +188,21 @@ sudo dnf remove focusbear
 
 # openSUSE
 sudo zypper remove focusbear
+
+# AppImage: delete the file
+rm /path/to/focusbear-*.AppImage
 ```
 
 ### Manual Cleanup
 
 ```bash
-# Remove all user data
-rm -rf ~/.local/share/focusbear/
-rm -rf ~/.mozilla/native-messaging-hosts/com.focusbear.native_host.json
-rm -rf ~/.config/focusbear/
+rm -rf ~/.local/share/focusbear
+rm -f ~/.local/bin/focusbear-native-host
+rm -f ~/.mozilla/native-messaging-hosts/com.focusbear.host.json
+rm -f ~/snap/firefox/common/.mozilla/native-messaging-hosts/com.focusbear.host.json
+rm -f ~/.config/{google-chrome,google-chrome-beta,google-chrome-unstable,chromium,opera}/NativeMessagingHosts/com.focusbear.host.json
+rm -f ~/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.focusbear.host.json
+rm -rf "$HOME/.config/Focus Bear"    # app settings, whitelist, sign-in data and caches
 rm -f /tmp/focusbear.sock
 ```
 
@@ -218,14 +224,22 @@ tail -f /tmp/focusbear-native-host.log
 pkill -f focusbear
 ```
 
-#### Extension Not Loading
+#### Extension Not Connecting
 ```bash
-# Verify extension file
-ls -la ~/.local/share/focusbear/focusbear-extension.xpi
+# Is the host launcher in place?
+ls -la ~/.local/bin/focusbear-native-host
 
-# Check Firefox manifest
-cat ~/.mozilla/native-messaging-hosts/com.focusbear.native_host.json
+# Does your browser's manifest exist? (Firefox shown; Chromium browsers use
+# ~/.config/<browser>/NativeMessagingHosts/, see File Locations)
+cat ~/.mozilla/native-messaging-hosts/com.focusbear.host.json
+
+# Which browser did each host start detect?
+grep "Detected Browser" /tmp/focusbear-native-host.log | tail
 ```
+
+- Open the app once: it rewrites the launcher and manifests on every launch.
+- The host runs under `node`; check `node --version` works in a normal terminal.
+- Chromium browsers: if the extension console says the native host is "forbidden", the extension's ID is not the one allowed in the manifest. That happens with development builds; see [docs/BLOCKING.md](docs/BLOCKING.md#development-setup).
 
 #### Missing Dependencies
 Re-run installation; dependency checker will auto-install:
@@ -323,12 +337,16 @@ Flatpak sandboxing prevents:
 
 | Component | Location |
 |-----------|----------|
-| App config | `~/.config/focusbear/` |
-| App data | `~/.local/share/focusbear/` |
-| Native host | `/usr/local/bin/focusbear-native-host` |
-| Firefox manifest (system) | `/usr/lib/mozilla/native-messaging-hosts/com.focusbear.native_host.json` |
-| Firefox manifest (user) | `~/.mozilla/native-messaging-hosts/com.focusbear.native_host.json` |
-| Chrome manifest | `~/.config/google-chrome/NativeMessagingHosts/com.focusbear.native_host.json` |
+| App settings and data | `~/.config/Focus Bear/` (`settings.json`, `whitelist.json`, Electron data) |
+| Host copy and legacy extension copies | `~/.local/share/focusbear/` |
+| Native host launcher (per user) | `~/.local/bin/focusbear-native-host` |
+| Native host launcher (system, deb/rpm) | `/usr/local/bin/focusbear-native-host` |
+| Firefox manifest (system, deb/rpm) | `/usr/lib/mozilla/native-messaging-hosts/com.focusbear.host.json` |
+| Firefox manifest (user) | `~/.mozilla/native-messaging-hosts/com.focusbear.host.json` |
+| Firefox manifest (snap) | `~/snap/firefox/common/.mozilla/native-messaging-hosts/com.focusbear.host.json` |
+| Chrome / Chromium / Opera manifests | `~/.config/{google-chrome,google-chrome-beta,google-chrome-unstable,chromium,opera}/NativeMessagingHosts/com.focusbear.host.json` |
+| Brave manifest | `~/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts/com.focusbear.host.json` |
+| systemd user unit (deb/rpm) | `/usr/lib/systemd/user/focusbear.service` |
 | Logs | `/tmp/focusbear-native-host.log` |
 | Socket | `/tmp/focusbear.sock` (runtime only) |
 
