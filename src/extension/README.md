@@ -1,49 +1,56 @@
-# Focus Bear Native Messaging Extension
+> **Legacy:** this is the earlier per-browser extension. It is replaced by the unified extension in the `chrome_extension` repository and kpet in this repository in case anything in it is missing from the unified one. 
 
-This extension communicates with the Focus Bear Electron app via native messaging to receive and enforce block lists.
+# Focus Bear Blocker (Firefox extension)
+
+This extension talks to the Focus Bear app through the native messaging host and blocks the sites on the user's blocklist. It is the Firefox build (Manifest v2, `webRequest` blocking).
+
+The extension for Chrome, Chromium, Brave and Opera lives in `../extension-chrome/` (Manifest v3, `declarativeNetRequest`). Both use the same native messaging host (`../native-messaging/host.js`). Architecture, URL matching differences and file locations are in [docs/BLOCKING.md](../../docs/BLOCKING.md).
 
 ## Setup for Development
 
-### 1. Install the Native Messaging Host
+### 1. Start the app
 
-Run this command from the project root:
+```bash
+npm run start
+```
+
+On startup the app installs the native messaging host for your user: a launcher at `~/.local/bin/focusbear-native-host`, copies under `~/.local/share/focusbear/`, and a native messaging manifest for each supported browser. It also starts the Unix socket server the host connects to. These files are rewritten on every launch.
+
+If you only want the host installed without running the app:
 
 ```bash
 npm run install-native-messaging
 ```
 
-Or manually:
+This writes the `~/.local/bin` launcher and the Firefox manifest only (not Chrome), and points at `host.js` in your checkout.
 
-```bash
-node src/native-messaging/install.js
-```
-
-This will:
-- Copy the native host script to `/usr/local/bin/focusbear-native-host`
-- Install the Firefox manifest to `~/.mozilla/native-messaging-hosts/`
-
-### 2. Load the Extension in Firefox
+### 2. Load the extension in Firefox
 
 1. Open Firefox
-2. Navigate to `about:debugging#/runtime/this-firefox`
+2. Go to `about:debugging#/runtime/this-firefox`
 3. Click **"Load Temporary Add-on..."**
-4. Navigate to `src/extension/` in this project
-5. Select the `manifest.json` file
+4. Select `manifest.json` in `src/extension/`
 
-The extension will now be loaded and should appear in your toolbar.
+Firefox removes temporary add-ons when it closes, so repeat this after each restart.
 
-### 3. Test the Connection
+### 3. Load the extension in Chrome, Chromium, Brave or Opera
 
-1. Start the Electron app (this starts the Unix socket server)
-2. Click the Focus Bear extension icon in your Firefox toolbar
-3. You should see:
-   - Connection status (green = connected, red = disconnected)
-   - Number of block patterns loaded
-   - List of all block patterns/regexes
+1. Open `chrome://extensions` and enable **Developer mode**
+2. Click **Load unpacked** and select `src/extension-chrome/`
 
-### 4. Configure Block List
+The manifest the app writes for these browsers only allows the **production** extension ID (`CHROME_EXTENSION_ID` in `src/electron/main.js`). If Chrome reports that access to the native messaging host is forbidden, the ID of your unpacked extension differs from that constant. See [Development Setup](../../docs/BLOCKING.md#development-setup).
 
-Use the Focus Bear app to configure your block list. The app will automatically broadcast updates to the extension via the native messaging host.
+### 4. Test the connection
+
+1. Make sure the app is running
+2. Click the Focus Bear Blocker icon in the browser toolbar
+3. The popup shows:
+   - Whether the extension is connected to the native messaging host
+   - Whether it is connected to the Focus Bear app ("App not running (using cached data)" means the host is up but the app is closed)
+
+### 5. Configure the block list
+
+Use the Focus Bear app (**Blocks → Super Distracting Sites**). The app sends the list to the extension through the native messaging host whenever it changes.
 
 ## How It Works
 
@@ -57,12 +64,12 @@ Use the Focus Bear app to configure your block list. The app will automatically 
          ▼
 ┌─────────────────────────────────┐
 │ Native Messaging Host           │
-│ (/usr/local/bin/...)            │
+│ (~/.local/bin/focusbear-native-host)│
 └────────┬────────────────────────┘
          │ stdin/stdout (JSON)
          ▼
 ┌─────────────────────────────────┐
-│ Firefox Extension               │
+│ Browser extension               │
 │ (background.js + popup)         │
 └─────────────────────────────────┘
 ```
@@ -70,52 +77,40 @@ Use the Focus Bear app to configure your block list. The app will automatically 
 ## Files
 
 - **manifest.json** - Extension manifest with permissions
-- **background.js** - Handles native messaging connection and URL blocking
-- **popup.html** - Extension popup UI
-- **popup.js** - Popup logic and display
+- **background.js** - Native messaging connection, URL blocking and temporary unblocks
+- **popup.html / popup.js** - Extension popup UI and logic
+- **blocked.html / blocked.js** - Page shown for a blocked site
 - **icon.png** - Extension icon
 
 ## Debugging
 
-### Check Native Host Logs
+### Check native host logs
 
 ```bash
 tail -f /tmp/focusbear-native-host.log
 ```
 
-### Check Extension Console
+### Check the extension console
 
 1. Go to `about:debugging#/runtime/this-firefox`
-2. Find the Focus Bear extension
-3. Click **"Inspect"**
-4. Check the Console tab for logs
+2. Find Focus Bear Blocker
+3. Click **"Inspect"** and open the Console tab
 
-### Test Native Host Manually
+### Test the native host manually
 
-You can test the native host directly:
+The launcher starts the host, but native messaging uses length-prefixed messages, so you can only check that it runs, not talk to it by hand:
 
 ```bash
-echo '{"type":"PING"}' | /usr/local/bin/focusbear-native-host
+~/.local/bin/focusbear-native-host
 ```
 
-Note: This won't work exactly as shown because native messaging uses length-prefixed messages, but you can check if the script runs.
+It should start without errors and keep running; check the log file for `Native host ready`. Stop it with Ctrl+C.
 
 ## Uninstalling
 
-Remove the native messaging components:
-
-```bash
-# Remove native host
-sudo rm /usr/local/bin/focusbear-native-host
-
-# Remove Firefox manifest
-rm ~/.mozilla/native-messaging-hosts/com.focusbear.host.json
-```
+Use the app: **Settings → Uninstall → Clean Up App Data** removes the launcher, the copies in `~/.local/share/focusbear/` and the manifests for every supported browser. Quit the app, then remove the extension from the browser (`about:addons`). Quit the app first, otherwise the app's extension monitor warns and closes the browser.
 
 ## Next Steps
 
-- [ ] Add support for Chrome/Chromium
-- [ ] Implement two-way communication (extension can send data back to app)
+- [ ] Distribute the extension through the Firefox Add-ons store
 - [ ] Add more sophisticated blocking rules (time-based, etc.)
-- [ ] Package extension for Firefox Add-ons store
-- [ ] Auto-installer in app settings

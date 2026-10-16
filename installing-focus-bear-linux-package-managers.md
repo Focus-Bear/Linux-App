@@ -2,6 +2,23 @@
 
 This document describes how to install, verify, and uninstall the Focus Bear Linux application using distribution package managers. It currently includes verified flows for Arch Linux (`pacman`) and Fedora / RHEL-family distributions (`dnf` / `rpm`), with a roadmap for other formats.
 
+## After Installing (all formats)
+
+Launch Focus Bear. The first-run setup screen asks which browsers you use (Firefox, Chrome, Chromium, Brave or Opera) and shows where to add the **Focus Bear** for each. The screen confirms when the extension has connected, and you can continue once every browser you selected is connected. The packages install the native messaging host but not the extension, so add the extension to each browser seperately.
+
+The native messaging host runs under `node`, so Node.js must be installed. The deb and rpm packages declare it as a dependency; with an AppImage you need to install it yourself.
+
+## Before Uninstalling (all formats)
+
+Per-user files are not removed by the package manager, so clean up first:
+
+1. In the app, open **Settings → Uninstall** and click **Clean Up App Data**
+2. Quit Focus Bear (system tray → **Quit**) and do not reopen it
+3. Remove the browser extension from each browser
+4. Run the uninstall command for your format
+
+Quit the app before removing the extension: while the app runs, a missing extension triggers a warning and the browser is closed after 30 seconds.
+
 ## Arch Linux (pacman)
 
 ### Install
@@ -47,7 +64,7 @@ Launch the app and confirm the main UI loads and is usable.
 
 ### Uninstall
 
-Remove the package:
+Run **Clean Up App Data** first (see above), then:
 
 ```bash
 sudo pacman -R focusbear
@@ -92,7 +109,8 @@ Defined in `build/rpm-postinst`. It runs as root after files are laid down and:
 - Sets `chrome-sandbox` SUID so Electron's process sandbox works.
 - Writes a `/usr/bin/focusbear` wrapper that invokes the binary in `/opt/Focus Bear/` with `--no-sandbox` (the install path contains a space, which breaks Electron's `LaunchProcess` argv splitting).
 - Patches the `.desktop` `Exec=` to point at the wrapper.
-- Installs a system-wide Firefox native messaging manifest at `/usr/lib/mozilla/native-messaging-hosts/com.focusbear.host.json` and a wrapper at `/usr/local/bin/focusbear-native-host`.
+- Installs a system-wide Firefox native messaging manifest at `/usr/lib/mozilla/native-messaging-hosts/com.focusbear.host.json` (and the same file under `/usr/lib64/mozilla/native-messaging-hosts/`) and a launcher at `/usr/local/bin/focusbear-native-host`.
+- Installs the optional systemd user unit `/usr/lib/systemd/user/focusbear.service` (not enabled automatically).
 
 ### Verify
 
@@ -111,6 +129,8 @@ rpm -ql focusbear
 The app should appear in your application launcher and show a system tray icon once running (same expected behavior as the pacman flow above).
 
 ### Uninstall
+
+Run **Clean Up App Data** first (see above), then:
 
 ```bash
 sudo dnf remove focusbear
