@@ -53,7 +53,7 @@ export function trayFocusView(session, now) {
 }
 
 /** Pages the tray may open in the main window. */
-export const TRAY_PAGES = ['day-plan', 'focus-session', 'todo-list', 'blocking'];
+export const TRAY_PAGES = ['day-plan', 'focus-session', 'micro-break', 'todo-list', 'blocking'];
 
 export function isTrayPage(pageId) {
   return TRAY_PAGES.includes(pageId);

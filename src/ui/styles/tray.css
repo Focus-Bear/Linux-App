@@ -136,3 +136,16 @@ body {
     justify-content: flex-end;
     margin-top: auto;
 }
+
+/* A row with a second line ("Next break in 12 min"). */
+.tray-row__text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    text-align: left;
+}
+
+.tray-row__sub {
+    font-size: 12px;
+    color: var(--fb-text-subtle);
+}

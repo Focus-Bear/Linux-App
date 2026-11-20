@@ -20,7 +20,11 @@ const SYNCED_STATES = {
   // "Immediately block super distracting sites" (kImmediatelyBlockDistractingSites)
   immediatelyBlock: false,
   // Usual focus session length in minutes (kPomodoroDurationMinutes)
-  pomodoroMinutes: 25
+  pomodoroMinutes: 25,
+  // Settings > Breaks: "Enable Breaks" (kUserdefaultsBreaksEnabledFromOnboarding)
+  breaksEnabled: true,
+  // "Start breaks automatically" (kBreakAutoStartEnabled)
+  breakAutoStart: false
 };
 
 const API_BASE_URL = 'https://api.focusbear.io';

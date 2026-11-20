@@ -9,6 +9,9 @@ import FocusSessionPage from './focus-session.jsx';
 import DayPlanPage from './day-plan.jsx';
 import SettingsFocusPage from './settings-focus.jsx';
 import SettingsAboutPage from './settings-about.jsx';
+import SettingsBreaksPage from './settings-breaks.jsx';
+import MicroBreakPage from './micro-break.jsx';
+import { useBreaks } from './useBreaks.js';
 import Distracting_sites_page from './distracting-sites';
 import BlockingSchedule from './blocking-schedule';
 import Keywords_page from './keyword-page';
@@ -36,6 +39,7 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const focus = useFocusSession();
   const focusActive = focus.active;
+  const breaks = useBreaks();
 
   const { item, child, page, webview } = resolveDestination(activeId, childIds[activeId]);
 
@@ -61,6 +65,11 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
     });
   };
 
+  const openChild = (itemId, childId) => {
+    setChildIds((prev) => ({ ...prev, [itemId]: childId }));
+    setActiveId(itemId);
+  };
+
   // No sidebar entry is an action at the moment; kept for entries that run
   // something instead of opening a page.
   const handleAction = () => {};
@@ -72,6 +81,23 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
           <DayPlanPage
             onOpenTodoList={() => setActiveId('todo-list')}
             onEditHabits={() => setActiveId('edit-habits')}
+          />
+        );
+      case 'micro-break':
+        return (
+          <MicroBreakPage
+            breaks={breaks}
+            onEditHabits={() => setActiveId('edit-habits')}
+            onOpenSettings={() => openChild('settings', 'settings-breaks')}
+            onLeave={() => setActiveId('day-plan')}
+          />
+        );
+      case 'settings-breaks':
+        return (
+          <SettingsBreaksPage
+            breaks={breaks}
+            onEditHabits={() => setActiveId('edit-habits')}
+            onStartBreak={() => setActiveId('micro-break')}
           />
         );
       case 'focus-session':

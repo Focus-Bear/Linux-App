@@ -9,7 +9,7 @@ let trayWindow;
 
 
 const win_width = 300;
-const win_height = 470;
+const win_height = 508;
 
 // Dev helper for desktops without a tray host (WSLg, some VMs): start the app
 // with FOCUSBEAR_SHOW_TRAY=1 to open the tray popup at launch and keep it open.

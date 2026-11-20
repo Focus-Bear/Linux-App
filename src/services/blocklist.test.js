@@ -142,3 +142,18 @@ test('the usual session length is read from and written as the string the other 
 test('an empty list is saved as empty, not skipped', () => {
   assert.deepEqual(toDeviceSettings({ kArrBlockedUrls: ['a.com'] }, { urlList: [] }).kArrBlockedUrls, []);
 });
+
+test('Breaks settings use the Windows keys and keep their defaults when the account has none', () => {
+  assert.deepEqual(fromDeviceSettings({ kUserdefaultsBreaksEnabledFromOnboarding: false, kBreakAutoStartEnabled: true }), {
+    breaksEnabled: false,
+    breakAutoStart: true,
+  });
+  assert.deepEqual(fromDeviceSettings({ kUserdefaultsBreaksEnabledFromOnboarding: 'no' }), {});
+  const saved = toDeviceSettings({ kIsOfficeModeEnabled: true }, { breaksEnabled: false, breakAutoStart: true });
+  assert.deepEqual(saved, {
+    kIsOfficeModeEnabled: true,
+    kUserdefaultsBreaksEnabledFromOnboarding: false,
+    kBreakAutoStartEnabled: true,
+  });
+  assert.deepEqual(toDeviceSettings({ a: 1 }, {}), { a: 1 });
+});
