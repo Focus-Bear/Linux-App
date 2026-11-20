@@ -5,6 +5,8 @@ import Setup from './Setup.jsx';
 import { nativeAuthService } from '../services/nativeAuth.js';
 import { auth0Sync } from '../services/sync.js';
 import { habitApi } from '../services/habitApi.js';
+import OnboardingPage from './onboarding.jsx';
+import { needsOnboarding, withOnboardingDone } from '../services/onboardingModel.js';
 
 const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
 
@@ -15,6 +17,9 @@ const App = function() {
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState('idle');
   const [setupComplete, setSetupComplete] = useState(null); // null=checking, false=needed, true=done
+  // First-run onboarding for a new account; `startPage` is where it hands over to the app.
+  const [onboarding, setOnboarding] = useState(false);
+  const [startPage, setStartPage] = useState(null);
 
   // Add this after your state declarations
   useEffect(() => {
@@ -122,6 +127,25 @@ const App = function() {
       // Register this install as one of the account's devices (once), as the
       // Windows and Mac apps do at sign-in. Habits can't be completed without it.
       habitApi.registerDevice().catch((error) => console.error('[Device] Could not register this device:', error));
+
+      // A new account (no desktop settings on the server yet) gets the first-run
+      // onboarding, as on Windows. Decided before anything is saved for it.
+      try {
+        const [localSettings, info] = await Promise.all([
+          window.api.getLocalSettings().catch(() => null),
+          window.api.getAppInfo?.().catch(() => null),
+        ]);
+        setOnboarding(
+          needsOnboarding({
+            deviceSettings: auth0Sync.rawAPIData,
+            localSettings,
+            userId: nativeAuthService.getUser()?.sub || '',
+            force: Boolean(info?.forceOnboarding),
+          }),
+        );
+      } catch (error) {
+        console.error('[Onboarding] Could not decide whether to show onboarding:', error);
+      }
       
       setSettingsLoaded(true);
     } catch (error) {
@@ -152,6 +176,21 @@ const App = function() {
     } catch (error) {
       console.error('Logout failed:', error);
     }
+  };
+
+  // Onboarding finished or skipped: remember it for this account on this
+  // computer, and open the app on the Start Focus Session screen (as Windows does).
+  const finishOnboarding = async (page) => {
+    try {
+      const localSettings = await window.api.getLocalSettings().catch(() => null);
+      await window.api.saveSettings({
+        onboardingDone: withOnboardingDone(localSettings, nativeAuthService.getUser()?.sub || ''),
+      });
+    } catch (error) {
+      console.error('[Onboarding] Could not save that onboarding is done:', error);
+    }
+    setStartPage(page || null);
+    setOnboarding(false);
   };
 
   const handleForceSync = async () => {
@@ -223,10 +262,18 @@ const App = function() {
     );
   }
 
+  if (onboarding) {
+    return (
+      <div className="fb-app">
+        <OnboardingPage user={user} onFinish={finishOnboarding} />
+      </div>
+    );
+  }
+
   return (
     <div className="fb-app">
       <UpdateNotification />
-      <Preferences user={user} syncStatus={syncStatus} onForceSync={handleForceSync} onLogout={handleLogout} />
+      <Preferences initialPage={startPage} user={user} syncStatus={syncStatus} onForceSync={handleForceSync} onLogout={handleLogout} />
     </div>
   );
 };

@@ -90,6 +90,7 @@ class SimpleAuth0Sync {
       if (!response.ok) {
         if (response.status === 404) {
           console.log('[Sync] No settings found on server (404)');
+          this.rawAPIData = {};
           return null;
         }
         throw new Error(`API error: ${response.status}`);

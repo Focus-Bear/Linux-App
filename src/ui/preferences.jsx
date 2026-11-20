@@ -35,8 +35,8 @@ const readCollapsed = () => {
  * Main window after sign-in: Windows-style sidebar on the left, an optional
  * second column for pages with sub-pages (Blocking, Settings), and the page.
  */
-const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
-  const [activeId, setActiveId] = useState(DEFAULT_ITEM_ID);
+const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, initialPage = null }) {
+  const [activeId, setActiveId] = useState(() => (initialPage && isNavigable(initialPage) ? initialPage : DEFAULT_ITEM_ID));
   const [childIds, setChildIds] = useState({});
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const focus = useFocusSession();

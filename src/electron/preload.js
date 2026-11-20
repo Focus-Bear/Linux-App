@@ -58,6 +58,21 @@ const API = {
         return ipcRenderer.send('switch-webview', id, metadata, bounds);
     },
 
+    // callback(id, message): a dashboard page reported something (window.chrome.webview.postMessage).
+    onWebViewMessage: function(callback) {
+        const listener = function(event, id, message) { callback(id, message); };
+        ipcRenderer.on('webview-message', listener);
+        return function() { ipcRenderer.removeListener('webview-message', listener); };
+    },
+
+    resendWebViewMetadata: function(id, metadata) {
+        return ipcRenderer.send('resend-webview-metadata', id, metadata);
+    },
+
+    destroyWebView: function(id) {
+        return ipcRenderer.send('destroy-webview', id);
+    },
+
     setWebViewBounds: function(bounds) {
         return ipcRenderer.send('set-webview-bounds', bounds);
     },
