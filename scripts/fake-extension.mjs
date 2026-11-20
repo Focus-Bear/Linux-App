@@ -43,7 +43,10 @@ export function startFakeExtension({
     socket.on('data', (data) => {
       for (const line of data.toString().split('\n').filter(Boolean)) {
         try {
-          log(`[fake-extension] <- ${JSON.parse(line).type}`);
+          const message = JSON.parse(line);
+          // FOCUSBEAR_FAKE_VERBOSE=1 also prints what the app sent (block list, allow list).
+          const detail = process.env.FOCUSBEAR_FAKE_VERBOSE === '1' ? ` ${JSON.stringify(message.data)}` : '';
+          log(`[fake-extension] <- ${message.type}${detail}`);
         } catch {
           // partial line; the next chunk completes it
         }
