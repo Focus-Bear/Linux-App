@@ -8,8 +8,12 @@ import { focusState } from './focusState.js';
 let trayWindow;
 
 
-const win_width = 280;
-const win_height = 500;
+const win_width = 300;
+const win_height = 470;
+
+// Dev helper for desktops without a tray host (WSLg, some VMs): start the app
+// with FOCUSBEAR_SHOW_TRAY=1 to open the tray popup at launch and keep it open.
+const keepTrayOpen = process.env.FOCUSBEAR_SHOW_TRAY === '1';
 
 function showWindow(mainWindow){
     //returns the primary display 
@@ -29,6 +33,7 @@ function showWindow(mainWindow){
         frame: false,
         alwaysOnTop: true,
         resizable: false,
+        useContentSize: true,
         skipTaskbar: true,
         type: 'toolbar',
         parent: mainWindow,  // Add this line
@@ -42,6 +47,7 @@ function showWindow(mainWindow){
     console.log(`Bounds X: ${primaryDisplay.bounds.x} disp width: ${width}`)
     console.log(`Bounds Y: ${primaryDisplay.bounds.y} disp width: ${height}`)
     trayWindow.on('blur', function() {
+        if (keepTrayOpen) return;
         if (trayWindow && !trayWindow.webContents.isDevToolsOpened()) {
             trayWindow.destroy()
         }
@@ -70,6 +76,8 @@ export function getTrayWindow() {
 
 function createTray(mainWindow){
     let tray = new Tray((join(app.getAppPath(), "./public/bear-icon.png" )))
+
+    if (keepTrayOpen) showWindow(mainWindow);
 
     tray.setToolTip('Focus Bear')
 

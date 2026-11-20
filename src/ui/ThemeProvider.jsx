@@ -21,6 +21,7 @@ export default function ThemeProvider({ children }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = resolved;
+    window.api?.setTheme?.(resolved); // the tray popup follows the same theme
   }, [resolved]);
 
   const setPreference = useCallback((next) => {

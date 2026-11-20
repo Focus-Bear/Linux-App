@@ -104,6 +104,18 @@ const API = {
         },
     },
 
+    // Tray popup: open a page of the main window ('day-plan', 'todo-list', ...).
+    openPage: function(pageId) { return ipcRenderer.send('tray-open-page', pageId); },
+
+    // Theme ('light' | 'dark'): the main window reports it, the tray popup follows it.
+    setTheme: function(theme) { return ipcRenderer.send('theme-changed', theme); },
+    getTheme: function() { return ipcRenderer.invoke('get-theme'); },
+    onThemeChanged: function(callback) {
+        const listener = function(event, theme) { callback(theme); };
+        ipcRenderer.on('theme-changed', listener);
+        return function() { ipcRenderer.removeListener('theme-changed', listener); };
+    },
+
     // The main process asks the window to show a page (e.g. tray > Start Focus Session).
     onNavigate: function(callback) {
         const listener = function(event, pageId) { callback(pageId); };
