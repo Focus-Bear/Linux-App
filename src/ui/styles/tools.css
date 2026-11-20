@@ -1,0 +1,542 @@
+/* TOOLS pages: Notes, Stats, Focus Music; and MAIN > Achievements. */
+
+.fb-tools__note {
+  margin: 8px 0;
+  color: var(--fb-text-muted);
+}
+
+.fb-tools__muted {
+  color: var(--fb-text-subtle);
+  font-size: 13px;
+}
+
+.fb-tools__error {
+  margin: 10px 0 0;
+  color: var(--fb-danger);
+}
+
+.fb-tools__spacer {
+  flex: 1;
+}
+
+.fb-tools__inline {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fb-tools__inline .fb-input {
+  flex: 1;
+  min-width: 180px;
+}
+
+.fb-tools__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fb-text-orange);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------- Notes ---------- */
+.fb-notes {
+  max-width: 1100px;
+}
+
+.fb-notes__columns {
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.fb-notes__columns > .fb-card + .fb-card {
+  margin-top: 0;
+}
+
+.fb-notes__list {
+  padding: 14px;
+}
+
+.fb-notes__list-head {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.fb-notes__rows {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.fb-notes__row {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 8px 10px;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fb-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fb-notes__row:hover {
+  background: var(--fb-surface-hover);
+}
+
+.fb-notes__row[aria-current='true'] {
+  background: var(--fb-selected-bg);
+  border-color: var(--fb-selected-border);
+  color: var(--fb-selected-fg);
+}
+
+.fb-notes__row-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fb-notes__row-preview,
+.fb-notes__row-date {
+  font-size: 12px;
+  color: var(--fb-text-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fb-notes__row[aria-current='true'] .fb-notes__row-preview,
+.fb-notes__row[aria-current='true'] .fb-notes__row-date {
+  color: inherit;
+  opacity: 0.8;
+}
+
+.fb-notes__editor-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.fb-notes__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.fb-notes__saved {
+  flex: 0 0 auto;
+  min-width: 90px;
+  text-align: right;
+  font-size: 12px;
+  color: var(--fb-text-subtle);
+}
+
+.fb-notes__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 10px;
+}
+
+.fb-notes__body {
+  min-height: 300px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--fb-border-strong);
+  border-radius: 10px;
+  background: var(--fb-input-bg);
+  color: var(--fb-text);
+  line-height: 1.55;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+
+.fb-notes__body:focus-visible {
+  border-color: var(--fb-orange-strong);
+  box-shadow: 0 0 0 2px var(--fb-btn-primary-bg);
+}
+
+.fb-notes__body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--fb-text-disabled);
+}
+
+.fb-notes__body p {
+  margin: 0 0 8px;
+}
+
+.fb-notes__body img {
+  max-width: 100%;
+}
+
+.fb-notes__body a {
+  color: var(--fb-text-orange);
+}
+
+/* ---------- Stats ---------- */
+.fb-stats {
+  max-width: 980px;
+}
+
+.fb-stats__tabs {
+  margin-bottom: 16px;
+}
+
+.fb-stats__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+
+.fb-stats__tiles > .fb-card + .fb-card {
+  margin-top: 0;
+}
+
+.fb-stats__tile-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+}
+
+.fb-stats__tile-head .fb-card__title {
+  margin: 0;
+}
+
+.fb-stats__big {
+  margin: 10px 0;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.fb-stats__big span {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fb-text-muted);
+}
+
+.fb-stats__bar {
+  height: 6px;
+  margin: 6px 0;
+  border-radius: 3px;
+  background: var(--fb-border);
+  overflow: hidden;
+}
+
+.fb-stats__bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--fb-orange);
+}
+
+.fb-stats__table {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.fb-stats__table th {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fb-border-strong);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--fb-text-subtle);
+}
+
+.fb-stats__table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--fb-border);
+  vertical-align: middle;
+}
+
+.fb-stats__rank {
+  width: 48px;
+  font-weight: 700;
+}
+
+.fb-stats__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.fb-stats__sorted {
+  font-weight: 700;
+  color: var(--fb-text-orange);
+}
+
+.fb-stats__caption {
+  min-width: 170px;
+  font-size: 12px;
+  color: var(--fb-text-subtle);
+}
+
+.fb-stats__you td {
+  background: var(--fb-surface-soft);
+}
+
+.fb-stats__position td {
+  border-top: 2px solid var(--fb-border-strong);
+}
+
+.fb-stats__goals {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.fb-stats__goals li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--fb-border);
+  border-radius: 10px;
+  background: var(--fb-surface-soft);
+}
+
+/* ---------- Focus Music ---------- */
+.fb-music__player {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.fb-music__art {
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+  border-radius: 12px;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  background: var(--fb-surface-soft);
+}
+
+.fb-music__now {
+  flex: 1;
+  min-width: 180px;
+  display: grid;
+  gap: 4px;
+}
+
+.fb-music__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fb-music__volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fb-text-subtle);
+}
+
+.fb-music__volume input {
+  width: 110px;
+  accent-color: var(--fb-orange-strong);
+}
+
+.fb-music__tracks {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+}
+
+.fb-music__track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px 8px 8px;
+  border: 1.5px solid var(--fb-border);
+  border-radius: 12px;
+  background: var(--fb-surface-raised);
+  color: var(--fb-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fb-music__track:hover {
+  background: var(--fb-surface-hover);
+}
+
+.fb-music__track--on {
+  border-color: var(--fb-selected-border);
+  background: var(--fb-selected-bg);
+  color: var(--fb-selected-fg);
+}
+
+.fb-music__track--on .fb-tools__muted {
+  color: inherit;
+}
+
+.fb-music__track img,
+.fb-music__thumb {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--fb-surface-soft);
+}
+
+.fb-music__track-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- Achievements ---------- */
+.fb-achievements__level {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.fb-achievements__badge {
+  width: 56px;
+  height: 56px;
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid var(--fb-orange-strong);
+  background: var(--fb-btn-primary-bg);
+  color: var(--fb-btn-primary-fg);
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.fb-achievements__steps {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.fb-achievements__steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 4px 0;
+  border-top: 1px solid var(--fb-border);
+}
+
+.fb-achievements__tick {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 2px solid var(--fb-border-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fb-achievements__step--done .fb-achievements__tick {
+  border-color: var(--fb-success);
+  background: var(--fb-success-bg);
+  color: var(--fb-success);
+}
+
+.fb-achievements__label {
+  flex: 1;
+}
+
+.fb-achievements__step--done .fb-achievements__label {
+  color: var(--fb-text-muted);
+}
+
+.fb-achievements__streak {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--fb-border);
+  border-radius: 12px;
+  background: var(--fb-surface-soft);
+}
+
+/* ---------- Sidebar: hide / restore tools ---------- */
+.fb-nav-section__head {
+  display: flex;
+  align-items: center;
+}
+
+.fb-nav-section__head .fb-nav-section__title {
+  flex: 1;
+  min-width: 0;
+}
+
+.fb-sidebar--collapsed .fb-nav-section__head .fb-icon-btn {
+  display: none;
+}
+
+.fb-nav-tools {
+  margin: 2px 6px 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--fb-border);
+  border-radius: 10px;
+  background: var(--fb-surface-soft);
+  font-size: 13px;
+}
+
+.fb-nav-tools p {
+  margin: 0 0 6px;
+  color: var(--fb-text-muted);
+}
+
+.fb-nav-tools label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.fb-nav-tools input {
+  accent-color: var(--fb-orange-strong);
+}
+
+@media (max-width: 900px) {
+  .fb-notes__columns {
+    grid-template-columns: 1fr;
+  }
+}

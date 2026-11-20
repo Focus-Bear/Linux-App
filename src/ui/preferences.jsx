@@ -20,8 +20,23 @@ import Keywords_page from './keyword-page';
 import UninstallPage from './uninstall-page';
 import AccountPage from './account';
 import SettingsUIPage from './settings-ui.jsx';
+import NotesPage from './notes.jsx';
+import StatsPage from './stats.jsx';
+import FocusMusicPage from './focus-music.jsx';
+import AchievementsPage from './achievements.jsx';
+import { toolIds } from './navigation.js';
+import { HIDDEN_TOOLS_KEY, parseHiddenTools, toggleHiddenTool } from '../services/statsModel.js';
 
 const COLLAPSED_KEY = 'fb_sidebar_collapsed';
+
+// Hidden tools are kept on this computer only, as on Windows (HiddenToolIds).
+const readHiddenTools = () => {
+  try {
+    return parseHiddenTools(window.localStorage.getItem(HIDDEN_TOOLS_KEY), toolIds());
+  } catch {
+    return [];
+  }
+};
 
 const readCollapsed = () => {
   try {
@@ -39,6 +54,19 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
   const [activeId, setActiveId] = useState(() => (initialPage && isNavigable(initialPage) ? initialPage : DEFAULT_ITEM_ID));
   const [childIds, setChildIds] = useState({});
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [hiddenTools, setHiddenTools] = useState(readHiddenTools);
+
+  const toggleTool = (id) => {
+    setHiddenTools((prev) => {
+      const next = toggleHiddenTool(prev, id);
+      try {
+        window.localStorage.setItem(HIDDEN_TOOLS_KEY, next.join(','));
+      } catch {
+        // not persisted
+      }
+      return next;
+    });
+  };
   const focus = useFocusSession();
   const focusActive = focus.active;
   const breaks = useBreaks();
@@ -84,6 +112,19 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
           <DayPlanPage
             onOpenTodoList={() => setActiveId('todo-list')}
             onEditHabits={() => setActiveId('edit-habits')}
+          />
+        );
+      case 'notes':
+        return <NotesPage />;
+      case 'stats':
+        return <StatsPage />;
+      case 'focus-music':
+        return <FocusMusicPage />;
+      case 'achievements':
+        return (
+          <AchievementsPage
+            blocking={blocking}
+            onOpen={([itemId, childId]) => (childId ? openChild(itemId, childId) : setActiveId(itemId))}
           />
         );
       case 'micro-break':
@@ -148,6 +189,8 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
         focusClock={focusActive ? formatClock(remainingMs(focus.session, focus.now)) : ''}
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
+        hiddenTools={hiddenTools}
+        onToggleTool={toggleTool}
         footer={
           user && (
             <>

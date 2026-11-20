@@ -1,8 +1,8 @@
 // Sidebar navigation model. Mirrors the Windows app's left menu
 // (FocusBearMainWindow.xaml + Core/Navigation/LeftMenuRules.cs): sections
 // MAIN / TOOLS / PREFERENCES, labels from config.json "leftMenuVcInfo".
-// Entries the Linux app doesn't have yet (Habits,
-// Brain Dump, Focus Music, Time Tracker, ...) are tracked as GitHub issues.
+// Entries the Linux app doesn't have yet (Revise, Time Tracker, ...) are
+// tracked as GitHub issues. TOOLS entries can be hidden with the cog.
 //
 // Each page is either a React page (`page`) or an embedded dashboard webview
 // (`webview`, a key of webViewConfigs in src/electron/webview-handler.js).
@@ -13,6 +13,8 @@ export const NAV_SECTIONS = [
     id: 'main',
     title: 'MAIN',
     items: [
+      // Set-up checklist and levels (src/ui/achievements.jsx).
+      { id: 'achievements', label: 'Achievements', icon: 'achievements', page: 'achievements' },
       // Today's routines, meetings and tasks (src/ui/day-plan.jsx).
       { id: 'day-plan', label: 'Day Plan', icon: 'dayplan', page: 'day-plan' },
       // Start / running / end screens (src/ui/focus-session.jsx).
@@ -26,7 +28,11 @@ export const NAV_SECTIONS = [
     title: 'TOOLS',
     items: [
       { id: 'todo-list', label: 'Todo List', icon: 'todo', webview: 'todo-list' },
-      { id: 'stats', label: 'Stats', icon: 'stats', webview: 'stats' },
+      // Notes and the Brain Dump (src/ui/notes.jsx).
+      { id: 'notes', label: 'Notes', icon: 'notes', page: 'notes' },
+      { id: 'focus-music', label: 'Focus Music', icon: 'music', page: 'focus-music' },
+      // Streaks, leaderboard, goals and the focus log (src/ui/stats.jsx).
+      { id: 'stats', label: 'Stats', icon: 'stats', page: 'stats' },
       { id: 'motivation', label: 'Motivation', icon: 'motivation', webview: 'motivation' },
     ],
   },
@@ -68,6 +74,21 @@ export const NAV_SECTIONS = [
 
 /** Opens on the Day Plan, like the Windows app (it used to open on Blocking, #48). */
 export const DEFAULT_ITEM_ID = 'day-plan';
+
+/** Ids of the TOOLS entries (the ones that can be hidden). */
+export function toolIds(sections = NAV_SECTIONS) {
+  return (sections.find((section) => section.id === 'tools')?.items || []).map((item) => item.id);
+}
+
+/** The sections without the hidden tools. A hidden tool that is open stays listed until another page is opened. */
+export function visibleSections(hidden = [], activeId = null, sections = NAV_SECTIONS) {
+  const gone = new Set(hidden);
+  return sections.map((section) =>
+    section.id === 'tools'
+      ? { ...section, items: section.items.filter((item) => !gone.has(item.id) || item.id === activeId) }
+      : section,
+  );
+}
 
 export function allItems(sections = NAV_SECTIONS) {
   return sections.flatMap((section) => section.items);
