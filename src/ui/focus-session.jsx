@@ -73,7 +73,7 @@ const store = (key, value) => {
  *   end     - "Great job" with the session's numbers and a reflection (SessionCompleteView.cs)
  * The session itself lives in the main process (see useFocusSession.js).
  */
-export default function FocusSessionPage({ session, now, loaded, blocking, onEditBlockLists }) {
+export default function FocusSessionPage({ session, now, loaded, blocking, onEditBlockLists, askMusic = false, onAnswerMusic }) {
   if (!loaded) {
     return (
       <div className="fb-page fb-focus">
@@ -83,7 +83,7 @@ export default function FocusSessionPage({ session, now, loaded, blocking, onEdi
   }
   if (!session) return <StartView blocking={blocking} onEditBlockLists={onEditBlockLists} />;
   if (session.status === 'ended') return <EndView session={session} />;
-  return <RunningView session={session} now={now} />;
+  return <RunningView session={session} now={now} askMusic={askMusic} onAnswerMusic={onAnswerMusic} />;
 }
 
 // ---------------------------------------------------------------- start ----
@@ -576,8 +576,9 @@ function StopDialog({ session, action, onConfirm, onCancel }) {
   );
 }
 
-function RunningView({ session, now }) {
+function RunningView({ session, now, askMusic, onAnswerMusic }) {
   const [stopAction, setStopAction] = useState(null); // null | 'end' | 'pause'
+  const [rememberMusic, setRememberMusic] = useState(false);
   const [taskError, setTaskError] = useState(null);
   const [dump, setDump] = useState('');
   const [dumpState, setDumpState] = useState('idle'); // idle | saving | saved | error
@@ -644,6 +645,22 @@ function RunningView({ session, now }) {
       <p className="fb-page__subtitle">
         {paused ? 'The clock is stopped. Resume when you are ready.' : 'Stay with it. Focus Bear is keeping distractions away.'}
       </p>
+
+      {askMusic && onAnswerMusic && (
+        <section className="fb-card fb-focus__music" aria-labelledby="focus-music-title">
+          <div>
+            <h2 id="focus-music-title" className="fb-card__title">🎵 Play focus music?</h2>
+            <label className="fb-focus__check" style={{ margin: 0 }}>
+              <input type="checkbox" checked={rememberMusic} onChange={(e) => setRememberMusic(e.target.checked)} />
+              <span>Remember my choice</span>
+            </label>
+          </div>
+          <div className="fb-row">
+            <button type="button" className="fb-btn fb-btn--primary" onClick={() => onAnswerMusic(true, rememberMusic)}>Play</button>
+            <button type="button" className="fb-btn fb-btn--gray" onClick={() => onAnswerMusic(false, rememberMusic)}>Not now</button>
+          </div>
+        </section>
+      )}
 
       <section className={`fb-card fb-focus__timer-card${paused ? ' fb-focus__timer-card--paused' : ''}`}>
         <div className="fb-focus__clock" role="timer" aria-label={session.untimed ? 'Time focused so far' : 'Time left'}>

@@ -58,8 +58,11 @@ export const NAV_SECTIONS = [
         icon: 'settings',
         children: [
           { id: 'settings-ui', label: 'UI', icon: 'ui', page: 'settings-ui' },
+          // Cuddly / Grizzly: the strictness a new focus session starts on.
+          { id: 'settings-strictness', label: 'Strictness', icon: 'blocking', page: 'settings-strictness' },
           { id: 'settings-focus', label: 'Focus Sessions', icon: 'focus', page: 'settings-focus' },
           { id: 'settings-breaks', label: 'Breaks', icon: 'break', page: 'settings-breaks' },
+          { id: 'settings-accessibility', label: 'Accessibility', icon: 'account', page: 'settings-accessibility' },
           { id: 'settings-account', label: 'Account', icon: 'account', page: 'settings-account' },
           { id: 'settings-subscription', label: 'Subscription', icon: 'motivation', webview: 'upgrade-now' },
           { id: 'settings-about', label: 'About', icon: 'help', page: 'settings-about' },

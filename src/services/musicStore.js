@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from 'react';
 import { toolsApi } from './toolsApi.js';
 import { neighbourTrack, trackList } from './statsModel.js';
+import { autoPlayTrack } from './settingsModel.js';
 
 const LAST_TRACK_KEY = 'fb_last_focus_track';
 const VOLUME_KEY = 'fb_focus_music_volume';
@@ -98,6 +99,14 @@ export const musicStore = {
 
   pause() {
     if (audio) audio.pause();
+  },
+
+  /** Starts the track played last (or a random one) when a focus session begins. */
+  async autoPlay() {
+    if (state.playing) return;
+    if (state.tracks.length === 0) await musicStore.load();
+    const track = autoPlayTrack(state.tracks, state.currentId || read(LAST_TRACK_KEY));
+    if (track) musicStore.play(track.id);
   },
 
   toggle(id = state.currentId) {

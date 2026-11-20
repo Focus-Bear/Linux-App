@@ -20,6 +20,11 @@ import Keywords_page from './keyword-page';
 import UninstallPage from './uninstall-page';
 import AccountPage from './account';
 import SettingsUIPage from './settings-ui.jsx';
+import SettingsStrictnessPage from './settings-strictness.jsx';
+import SettingsAccessibilityPage from './settings-accessibility.jsx';
+import { useSyncedState } from '../services/sync.js';
+import { musicStore } from '../services/musicStore.js';
+import { musicAction } from '../services/settingsModel.js';
 import { postponeStore } from '../services/postponeStore.js';
 import NotesPage from './notes.jsx';
 import StatsPage from './stats.jsx';
@@ -104,6 +109,46 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
     return () => clearInterval(timer);
   }, []);
 
+  // Settings > Accessibility: "Prefer reduced motion" switches the animations off.
+  const [reducedMotion] = useSyncedState('reducedMotion');
+  useEffect(() => {
+    if (reducedMotion) document.documentElement.dataset.reducedMotion = '1';
+    else delete document.documentElement.dataset.reducedMotion;
+  }, [reducedMotion]);
+
+  // Focus music when a session starts (Settings > Focus Sessions): play it, or
+  // ask on the session screen. A session is handled once, also across a restart.
+  const [musicChoice, setMusicChoice] = useSyncedState('focusMusicAutoStart');
+  const [askMusic, setAskMusic] = useState(false);
+  const sessionKey = focusActive && focus.session ? String(focus.session.startTime) : '';
+  useEffect(() => {
+    if (!focusActive) setAskMusic(false);
+    if (!sessionKey) return;
+    let handledKey = '';
+    try {
+      handledKey = window.sessionStorage.getItem('fb_music_session') || '';
+    } catch {
+      // asked again after a reload
+    }
+    const action = musicAction({ choice: musicChoice, sessionKey, handledKey, playing: musicStore.get().playing });
+    if (action === 'nothing') return;
+    try {
+      window.sessionStorage.setItem('fb_music_session', sessionKey);
+    } catch {
+      // not remembered
+    }
+    if (action === 'play') musicStore.autoPlay();
+    else setAskMusic(true);
+    // The choice is read when the session starts; changing it later doesn't start music.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionKey, focusActive]);
+
+  const answerMusic = (play, remember) => {
+    setAskMusic(false);
+    if (play) musicStore.autoPlay();
+    if (remember) setMusicChoice(play ? 'play' : 'off');
+  };
+
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       try {
@@ -172,6 +217,8 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
             loaded={focus.loaded}
             blocking={blocking}
             onEditBlockLists={() => openChild('blocking', 'block-lists')}
+            askMusic={askMusic}
+            onAnswerMusic={answerMusic}
           />
         );
       case 'blocking-schedule':
@@ -184,6 +231,10 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
         return <Keywords_page />;
       case 'settings-ui':
         return <SettingsUIPage />;
+      case 'settings-strictness':
+        return <SettingsStrictnessPage onOpenFocus={() => setActiveId('focus-session')} />;
+      case 'settings-accessibility':
+        return <SettingsAccessibilityPage />;
       case 'settings-focus':
         return <SettingsFocusPage />;
       case 'settings-about':

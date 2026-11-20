@@ -106,6 +106,10 @@ export function fromDeviceSettings(device = {}) {
   if (typeof device.kBreakAutoStartEnabled === 'boolean') {
     mapped.breakAutoStart = device.kBreakAutoStartEnabled;
   }
+  if (typeof device.kIsReducedMotion === 'boolean') mapped.reducedMotion = device.kIsReducedMotion;
+  if (['ask', 'play', 'off'].includes(device.kFocusMusicAutoStartPreference)) {
+    mapped.focusMusicAutoStart = device.kFocusMusicAutoStartPreference;
+  }
   return mapped;
 }
 
@@ -123,5 +127,9 @@ export function toDeviceSettings(device = {}, settings = {}) {
   }
   if (typeof settings.breaksEnabled === 'boolean') next.kUserdefaultsBreaksEnabledFromOnboarding = settings.breaksEnabled;
   if (typeof settings.breakAutoStart === 'boolean') next.kBreakAutoStartEnabled = settings.breakAutoStart;
+  if (typeof settings.reducedMotion === 'boolean') next.kIsReducedMotion = settings.reducedMotion;
+  if (['ask', 'play', 'off'].includes(settings.focusMusicAutoStart)) {
+    next.kFocusMusicAutoStartPreference = settings.focusMusicAutoStart;
+  }
   return next;
 }
