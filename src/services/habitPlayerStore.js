@@ -28,11 +28,13 @@ let version = 0;
 // on the Day Plan straight away. `outcomesDay` is the day they belong to.
 let outcomes = {};
 let outcomesDay = '';
-let snapshot = { player, failed, version, outcomes, outcomesDay };
+// True when a timed habit that asks a question ran out: the player asks before reporting it.
+let asking = false;
+let snapshot = { player, failed, version, outcomes, outcomesDay, asking };
 const listeners = new Set();
 
 function publish() {
-  snapshot = { player, failed, version, outcomes, outcomesDay };
+  snapshot = { player, failed, version, outcomes, outcomesDay, asking };
   listeners.forEach((listener) => listener());
 }
 
@@ -42,13 +44,18 @@ function schedule() {
   if (!player || player.phase !== 'running' || player.pausedAt !== null) return;
   if (!isTimed(currentHabit(player))) return;
   deadline = setTimeout(() => {
-    if (isDue(player, Date.now())) end('done');
-    else schedule();
+    if (!isDue(player, Date.now())) schedule();
+    else if (currentHabit(player)?.questions?.length > 0) {
+      // Log quantity: wait for the answer (see habit-player.jsx).
+      asking = true;
+      publish();
+    } else end('done');
   }, remainingMs(player, Date.now()) + 30);
 }
 
 function set(next) {
   player = next;
+  asking = false;
   schedule();
   publish();
 }
@@ -82,11 +89,12 @@ export async function reportHabit(habit, timing) {
   }
 }
 
-function end(outcome) {
+function end(outcome, answers = []) {
   if (!player || player.phase !== 'running') return;
   const now = Date.now();
   const habit = currentHabit(player);
-  const timing = completionTiming(player, outcome, now);
+  let timing = completionTiming(player, outcome, now);
+  if (timing && Array.isArray(answers) && answers.length > 0) timing = { ...timing, answers };
   set(finishCurrent(player, outcome, now));
   reportHabit(habit, timing).catch(() => {});
 }
@@ -102,7 +110,7 @@ export const habitPlayer = {
   },
   pause: () => set(pausePlayer(player, Date.now())),
   resume: () => set(resumePlayer(player, Date.now())),
-  /** 'done' | 'already-did' | 'skipped' for the habit that is playing. */
+  /** 'done' | 'already-did' | 'skipped' for the habit that is playing; `answers` are its log quantity answers. */
   end,
   next: () => set(startNext(player, Date.now())),
   skipNext() {
@@ -125,7 +133,7 @@ const subscribe = (listener) => {
   return () => listeners.delete(listener);
 };
 
-/** { player, failed, version, outcomes, outcomesDay } */
+/** { player, failed, version, outcomes, outcomesDay, asking } */
 export function useHabitPlayer() {
   return useSyncExternalStore(subscribe, habitPlayer.get);
 }

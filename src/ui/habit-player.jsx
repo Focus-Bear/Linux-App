@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import './styles/distracting-sites.css'; // shared .fb-dialog
 import './styles/focus-session.css'; // shared clock and progress bar
 import './styles/habit-player.css';
-import { habitPlayer } from '../services/habitPlayerStore.js';
+import { habitPlayer, useHabitPlayer } from '../services/habitPlayerStore.js';
+import QuantityDialog from './quantity-dialog.jsx';
+import { POSTPONE_CHOICES } from '../services/dayPlanExtras.js';
 import {
   currentHabit,
   finishedHeading,
@@ -29,7 +31,7 @@ const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
  *
  * `onBack` returns to the Day Plan and leaves the routine running.
  */
-export default function HabitPlayer({ player, failed, onBack }) {
+export default function HabitPlayer({ player, failed, onBack, onPostpone }) {
   if (!player) return null;
   return (
     <div className="fb-page fb-player">
@@ -40,7 +42,7 @@ export default function HabitPlayer({ player, failed, onBack }) {
         <span className="fb-player__routine">{player.routine.title}</span>
       </div>
 
-      {player.phase === 'running' && <RunningHabit player={player} />}
+      {player.phase === 'running' && <RunningHabit player={player} onPostpone={onPostpone} />}
       {player.phase === 'between' && <BetweenHabits player={player} />}
       {player.phase === 'finished' && <RoutineFinished player={player} />}
 
@@ -54,9 +56,13 @@ export default function HabitPlayer({ player, failed, onBack }) {
   );
 }
 
-function RunningHabit({ player }) {
+function RunningHabit({ player, onPostpone }) {
   const [now, setNow] = useState(() => Date.now());
   const [skipStep, setSkipStep] = useState(null); // null | 'why' | 'confirm'
+  // Log quantity: asked when "I'm done" is pressed, or (`asking`) when the countdown ran out.
+  const [askQuantity, setAskQuantity] = useState(false);
+  const [postponing, setPostponing] = useState(false);
+  const { asking } = useHabitPlayer();
   const habit = currentHabit(player);
   const paused = isPaused(player);
   const timed = isTimed(habit);
@@ -115,7 +121,11 @@ function RunningHabit({ player }) {
               {paused ? 'Resume' : 'Pause'}
             </button>
           ) : (
-            <button type="button" className="fb-btn fb-btn--primary" onClick={() => habitPlayer.end('done')}>
+            <button
+              type="button"
+              className="fb-btn fb-btn--primary"
+              onClick={() => (habit.questions?.length > 0 ? setAskQuantity(true) : habitPlayer.end('done'))}
+            >
               I&apos;m done
             </button>
           )}
@@ -123,7 +133,38 @@ function RunningHabit({ player }) {
             Skip this habit for today
           </button>
         </div>
+
+        {onPostpone && (
+          <div className="fb-player__postpone">
+            {postponing ? (
+              <span className="fb-row" role="group" aria-label="Postpone the routine by">
+                <span>Remind me in</span>
+                {POSTPONE_CHOICES.map((minutes) => (
+                  <button key={minutes} type="button" className="fb-btn fb-btn--small" onClick={() => onPostpone(minutes)}>
+                    {minutes} min
+                  </button>
+                ))}
+                <button type="button" className="fb-btn fb-btn--gray fb-btn--small" onClick={() => setPostponing(false)}>Cancel</button>
+              </span>
+            ) : (
+              <button type="button" className="fb-player__link" onClick={() => setPostponing(true)}>
+                Postpone the routine
+              </button>
+            )}
+          </div>
+        )}
       </section>
+
+      {(asking || askQuantity) && (
+        <QuantityDialog
+          habit={habit}
+          onSubmit={(answers) => {
+            setAskQuantity(false);
+            habitPlayer.end('done', answers);
+          }}
+          onCancel={asking ? undefined : () => setAskQuantity(false)}
+        />
+      )}
 
       {skipStep && (
         <div className="fb-dialog-overlay" onClick={closeSkip}>

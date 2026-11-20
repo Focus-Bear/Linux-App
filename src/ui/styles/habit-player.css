@@ -124,3 +124,10 @@
     font-size: 13px;
     color: var(--fb-danger);
 }
+
+.fb-player__postpone {
+  margin-top: 14px;
+  font-size: 13px;
+  display: flex;
+  justify-content: center;
+}

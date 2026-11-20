@@ -22,6 +22,7 @@ const make = (routes, extra = {}) => {
 };
 
 const BASE_ROUTES = [
+  ['/day-plan/', 200, { events: [] }],
   ['/user-settings', 200, { startup_time: '07:00', morning_activities: [] }],
   ['/routine-progress', 200, { morning_routine: null }],
   ['/calendar/google/calendar-datas', 200, { calendars: [] }],
@@ -93,7 +94,7 @@ test('tasks or meetings failing still shows the day, and says which part is miss
   const result = await api.loadDay(DAY, 0);
   assert.deepEqual(result.tasks, []);
   assert.equal(result.progress, null);
-  assert.deepEqual(result.failed.sort(), ['progress', 'tasks']);
+  assert.deepEqual(result.failed.sort(), ['events', 'progress', 'tasks']);
 });
 
 test('without the settings there is no day to show', async () => {
