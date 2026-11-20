@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import './styles/Consistent-colors.css';
 import './styles/uninstall-page.css';
 
 const UninstallPage = function() {
@@ -70,7 +69,8 @@ const UninstallPage = function() {
       <div className="code-block-wrapper">
         <code className="code-block">{command}</code>
         <button
-          className="copy-btn"
+          type="button"
+          className="fb-btn fb-btn--small"
           onClick={() => copyToClipboard(command, commandId)}
         >
           {copiedCommand === commandId ? '✓ Copied' : 'Copy'}
@@ -80,15 +80,12 @@ const UninstallPage = function() {
   };
 
   return (
-    <section id="uninstall-page">
-      <h1 style={{ fontSize: '1.3rem', marginBottom: '15px' }}>Uninstall Focus Bear</h1>
-
-      <div>
-        <p>
-          Before you uninstall, you can clean up all app data
-          and settings. This will remove your configuration but won't uninstall the application itself.
-        </p>
-      </div>
+    <section id="uninstall-page" className="fb-page">
+      <h1 className="fb-page__title">Uninstall Focus Bear</h1>
+      <p className="fb-page__subtitle">
+        Before you uninstall, you can clean up all app data and settings. This removes your
+        configuration but doesn&apos;t uninstall the application itself.
+      </p>
 
       {cleanupResult && (
         <div className={`cleanup-status ${cleanupResult.success ? 'success' : 'error'}`}>
@@ -113,11 +110,8 @@ const UninstallPage = function() {
         </div>
       )}
 
-      <div className="setup-section">
-        <h2 className="section-header">
-      
-          Clean up app data
-        </h2>
+      <div className="fb-card">
+        <h2 className="fb-card__title">Clean up app data</h2>
 
         <p>
           This will remove all local data created by Focus Bear, including:
@@ -130,9 +124,10 @@ const UninstallPage = function() {
           <li>Focus session state</li>
         </ul>
 
-        <div style={{ marginTop: '20px' }}>
+        <div>
           <button
-            className="cleanup-btn"
+            type="button"
+            className="fb-btn fb-btn--danger"
             onClick={handleCleanup}
             disabled={isCleaningUp}
           >
@@ -141,11 +136,8 @@ const UninstallPage = function() {
         </div>
       </div>
 
-      <div className="setup-section">
-        <h2 className="section-header">
-      
-          Uninstall the application
-        </h2>
+      <div className="fb-card">
+        <h2 className="fb-card__title">Uninstall the application</h2>
 
         <p>
           After cleaning up your data, you can uninstall Focus Bear using your system's package manager:
@@ -159,7 +151,7 @@ const UninstallPage = function() {
           />
         </div>
 
-        <p style={{ marginTop: '15px', color: '#666', fontSize: '0.85rem' }}>
+        <p className="uninstall-hint">
           Run this command in your terminal to completely remove Focus Bear from your system.
         </p>
       </div>

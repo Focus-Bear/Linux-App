@@ -77,18 +77,20 @@ const s = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    background: '#f0f4f8',
+    background: 'var(--fb-surface)',
+    color: 'var(--fb-text)',
     padding: '24px',
     overflowY: 'auto',
-    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    fontFamily: 'var(--fb-font)',
   },
   card: {
-    background: 'white',
+    background: 'var(--fb-surface-raised)',
+    border: '1px solid var(--fb-border)',
     borderRadius: '16px',
     padding: '40px',
     width: '100%',
     maxWidth: '480px',
-    boxShadow: '0 4px 24px rgba(0,0,0,0.08)',
+    boxShadow: 'var(--fb-shadow)',
   },
   stepDots: {
     display: 'flex',
@@ -99,34 +101,34 @@ const s = {
     width: '28px',
     height: '4px',
     borderRadius: '2px',
-    background: active ? '#ed8936' : '#e2e8f0',
+    background: active ? 'var(--fb-orange)' : 'var(--fb-border)',
     transition: 'background 0.2s',
   }),
   emoji: {
     marginBottom: '16px',
   },
   logo: {
-    width: '280px',
-    height: '100px',
-    objectFit: 'contain',
-    background: 'white',
-    borderRadius: '16px',
-    padding: '12px 24px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '10px',
+    fontSize: '30px',
+    fontWeight: 600,
+    letterSpacing: '-0.02em',
   },
   title: {
     fontSize: '22px',
     fontWeight: '700',
-    color: '#1a202c',
+    color: 'var(--fb-text)',
     marginBottom: '8px',
   },
   subtitle: {
     fontSize: '14px',
-    color: '#718096',
+    color: 'var(--fb-text-muted)',
     marginBottom: '28px',
     lineHeight: '1.6',
   },
   browserCard: (checked) => ({
-    border: `2px solid ${checked ? '#ed8936' : '#e2e8f0'}`,
+    border: `2px solid ${checked ? 'var(--fb-orange-strong)' : 'var(--fb-border)'}`,
     borderRadius: '10px',
     padding: '14px 16px',
     display: 'flex',
@@ -134,7 +136,7 @@ const s = {
     gap: '12px',
     cursor: 'pointer',
     marginBottom: '10px',
-    background: checked ? '#fffaf5' : 'white',
+    background: checked ? 'var(--fb-surface-soft)' : 'var(--fb-surface-raised)',
     transition: 'border-color 0.15s, background 0.15s',
     userSelect: 'none',
   }),
@@ -142,8 +144,8 @@ const s = {
     width: '20px',
     height: '20px',
     borderRadius: '6px',
-    border: `2px solid ${checked ? '#ed8936' : '#cbd5e0'}`,
-    background: checked ? '#ed8936' : 'white',
+    border: `2px solid ${checked ? 'var(--fb-orange-strong)' : 'var(--fb-border-strong)'}`,
+    background: checked ? 'var(--fb-orange-strong)' : 'transparent',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -153,18 +155,19 @@ const s = {
   instructions: {
     margin: '0 0 16px 0',
     paddingLeft: '20px',
-    color: '#4a5568',
+    color: 'var(--fb-text-muted)',
     fontSize: '14px',
     lineHeight: '2',
+    textAlign: 'left',
   },
   pathBox: {
-    background: '#f7fafc',
-    border: '1px solid #e2e8f0',
+    background: 'var(--fb-surface-soft)',
+    border: '1px solid var(--fb-border)',
     borderRadius: '8px',
     padding: '10px 14px',
-    fontFamily: '"SF Mono", Monaco, Consolas, monospace',
+    fontFamily: 'var(--fb-font-mono)',
     fontSize: '12px',
-    color: '#2d3748',
+    color: 'var(--fb-text)',
     wordBreak: 'break-all',
     marginBottom: '16px',
     display: 'flex',
@@ -172,67 +175,33 @@ const s = {
     justifyContent: 'space-between',
     gap: '8px',
   },
-  copyBtn: {
-    background: 'none',
-    border: '1px solid #e2e8f0',
-    borderRadius: '6px',
-    padding: '4px 10px',
-    fontSize: '11px',
-    fontWeight: '600',
-    color: '#718096',
-    cursor: 'pointer',
-    flexShrink: 0,
-  },
   statusRow: (connected) => ({
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
     padding: '12px 16px',
     borderRadius: '10px',
-    background: connected ? '#f0fff4' : '#fffaf0',
-    border: `1px solid ${connected ? '#9ae6b4' : '#fbd38d'}`,
+    background: connected ? 'var(--fb-success-bg)' : 'var(--fb-warning-bg)',
+    border: `1px solid ${connected ? 'var(--fb-success)' : 'var(--fb-orange-strong)'}`,
     marginBottom: '16px',
   }),
   statusDot: (connected) => ({
     width: '10px',
     height: '10px',
     borderRadius: '50%',
-    background: connected ? '#48bb78' : '#ed8936',
+    background: connected ? 'var(--fb-success)' : 'var(--fb-orange)',
     flexShrink: 0,
     animation: connected ? 'none' : 'focusbear-pulse 1.5s ease-in-out infinite',
   }),
   statusText: (connected) => ({
     fontSize: '13px',
     fontWeight: '600',
-    color: connected ? '#276749' : '#7b341e',
+    color: connected ? 'var(--fb-success)' : 'var(--fb-text-orange)',
   }),
   btnRow: {
     display: 'flex',
     gap: '10px',
     marginTop: '24px',
-  },
-  primaryBtn: (disabled) => ({
-    flex: 2,
-    padding: '13px',
-    borderRadius: '10px',
-    border: 'none',
-    background: disabled ? '#e2e8f0' : '#ed8936',
-    color: disabled ? '#a0aec0' : 'white',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    transition: 'background 0.15s',
-  }),
-  secondaryBtn: {
-    flex: 1,
-    padding: '13px',
-    borderRadius: '10px',
-    border: '1px solid #e2e8f0',
-    background: 'white',
-    color: '#718096',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer',
   },
 };
 
@@ -290,11 +259,10 @@ export default function Setup({ onComplete }) {
             <div style={s.dot(false)} />
           </div>
           <div style={s.emoji}>
-            <picture>
-              <source srcSet="https://focus-bear.github.io/assets/focus-blocked/images/FocusBearLogo.svg" type="image/svg+xml" />
-              <source srcSet="https://focus-bear.github.io/assets/focus-blocked/images/FocusBearLogo.webp" type="image/webp" />
-              <img src="https://focus-bear.github.io/assets/focus-blocked/images/FocusBearLogo.png" alt="Focus Bear" style={s.logo} />
-            </picture>
+            <div style={s.logo}>
+              <img src={`${import.meta.env.BASE_URL}bear-icon.png`} alt="" width="48" height="48" />
+              <span>focus bear</span>
+            </div>
           </div>
           <div style={s.title}>Welcome to Focus Bear</div>
           <div style={s.subtitle}>
@@ -308,12 +276,12 @@ export default function Setup({ onComplete }) {
               onClick={() => toggleBrowser(b.id)}
             >
               <span style={{ fontSize: '24px' }}>{b.icon}</span>
-              <span style={{ fontSize: '15px', fontWeight: '600', color: '#2d3748', flex: 1 }}>
+              <span style={{ fontSize: '15px', fontWeight: '600', color: 'var(--fb-text)', flex: 1 }}>
                 {b.name}
               </span>
               <div style={s.checkbox(selected.includes(b.id))}>
                 {selected.includes(b.id) && (
-                  <span style={{ color: 'white', fontSize: '11px', fontWeight: 800 }}>✓</span>
+                  <span style={{ color: 'var(--fb-bg)', fontSize: '11px', fontWeight: 800 }}>✓</span>
                 )}
               </div>
             </div>
@@ -321,7 +289,8 @@ export default function Setup({ onComplete }) {
 
           <div style={{ marginTop: '24px' }}>
             <button
-              style={s.primaryBtn(selected.length === 0)}
+              type="button"
+              className="fb-btn fb-btn--primary fb-btn--block"
               disabled={selected.length === 0}
               onClick={() => setStep(2)}
             >
@@ -352,7 +321,7 @@ export default function Setup({ onComplete }) {
           return (
             <div key={b.id}>
               {selectedDefs.length > 1 && (
-                <div style={{ fontSize: '13px', fontWeight: '700', color: '#4a5568', marginBottom: '10px' }}>
+                <div style={{ fontSize: '13px', fontWeight: '700', color: 'var(--fb-text-muted)', marginBottom: '10px' }}>
                   {b.icon} {b.name}
                 </div>
               )}
@@ -361,7 +330,7 @@ export default function Setup({ onComplete }) {
               </ol>
               <div style={s.pathBox}>
                 <span>{b.xpiPath}</span>
-                <button style={s.copyBtn} onClick={() => copyPath(b.xpiPath)}>
+                <button type="button" className="fb-btn fb-btn--small fb-btn--gray" onClick={() => copyPath(b.xpiPath)}>
                   {copiedPath === b.xpiPath ? 'Copied!' : 'Copy'}
                 </button>
               </div>
@@ -378,15 +347,17 @@ export default function Setup({ onComplete }) {
         })}
 
         <div style={s.btnRow}>
-          <button style={s.secondaryBtn} onClick={() => setStep(1)}>← Back</button>
+          <button type="button" className="fb-btn fb-btn--gray" style={{ flex: 1 }} onClick={() => setStep(1)}>← Back</button>
           <button
-            style={s.primaryBtn(!allConnected || completing)}
+            type="button"
+            className="fb-btn fb-btn--primary"
+            style={{ flex: 2 }}
             disabled={!allConnected || completing}
             onClick={handleComplete}
           >
             {completing
               ? <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  <span style={{ width: '14px', height: '14px', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: 'white', borderRadius: '50%', display: 'inline-block', animation: 'focusbear-spin 0.7s linear infinite' }} />
+                  <span style={{ width: '14px', height: '14px', border: '2px solid var(--fb-border-strong)', borderTopColor: 'currentColor', borderRadius: '50%', display: 'inline-block', animation: 'focusbear-spin 0.7s linear infinite' }} />
                   Setting up…
                 </span>
               : allConnected ? 'Get Started →' : 'Waiting…'}
