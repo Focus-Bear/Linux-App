@@ -37,7 +37,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "concurrently": "^9.2.1",
     "electron": "^37.3.0",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.18.0",
     "eslint": "^9.32.0",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
@@ -73,11 +73,13 @@
       "category": "Utility",
       "maintainer": "your-email@example.com",
       "desktop": {
-        "Name": "Focus Bear",
-        "Comment": "Productivity and focus management tool",
-        "Categories": "Utility;Productivity;",
-        "Keywords": "productivity;focus;blocking;",
-        "MimeType": "x-scheme-handler/focusbear;"
+        "entry": {
+          "Name": "Focus Bear",
+          "Comment": "Productivity and focus management tool",
+          "Categories": "Utility;Productivity;",
+          "Keywords": "productivity;focus;blocking;",
+          "MimeType": "x-scheme-handler/focusbear;"
+        }
       },
       "executableName": "focusbear"
     },
