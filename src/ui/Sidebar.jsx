@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Icon from './icons.jsx';
-import { itemLabel, NAV_SECTIONS } from './navigation.js';
+import { itemLabel, NAV_SECTIONS, visibleSections } from './navigation.js';
 
 const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
 
@@ -9,8 +9,11 @@ const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
  * logo + collapse button, MAIN / TOOLS / PREFERENCES sections that fold,
  * orange line icons, selected entry as a cream pill with an orange border.
  */
-export default function Sidebar({ activeId, onSelect, onAction, focusActive, focusClock, collapsed, onToggleCollapsed, footer }) {
+export default function Sidebar({ activeId, onSelect, onAction, focusActive, focusClock, collapsed, onToggleCollapsed, footer, hiddenTools = [], onToggleTool }) {
   const [closedSections, setClosedSections] = useState(() => new Set());
+  // The cog on TOOLS: choose which tools the menu shows (Windows: hide / restore tools).
+  const [choosingTools, setChoosingTools] = useState(false);
+  const allTools = NAV_SECTIONS.find((section) => section.id === 'tools')?.items || [];
 
   const toggleSection = (id) =>
     setClosedSections((prev) => {
@@ -41,19 +44,44 @@ export default function Sidebar({ activeId, onSelect, onAction, focusActive, foc
       </div>
 
       <div className="fb-sidebar__scroll">
-        {NAV_SECTIONS.map((section) => {
+        {visibleSections(hiddenTools, activeId).map((section) => {
           const closed = closedSections.has(section.id) && !collapsed;
           return (
             <div key={section.id} className={`fb-nav-section${closed ? ' fb-nav-section--closed' : ''}`}>
-              <button
-                type="button"
-                className="fb-nav-section__title"
-                onClick={() => toggleSection(section.id)}
-                aria-expanded={!closed}
-              >
-                <span>{section.title}</span>
-                <Icon name="chevronDown" size={16} />
-              </button>
+              <div className="fb-nav-section__head">
+                <button
+                  type="button"
+                  className="fb-nav-section__title"
+                  onClick={() => toggleSection(section.id)}
+                  aria-expanded={!closed}
+                >
+                  <span>{section.title}</span>
+                  <Icon name="chevronDown" size={16} />
+                </button>
+                {section.id === 'tools' && onToggleTool && (
+                  <button
+                    type="button"
+                    className="fb-icon-btn"
+                    onClick={() => setChoosingTools((open) => !open)}
+                    aria-expanded={choosingTools}
+                    aria-label="Choose which tools to show"
+                    title="Choose which tools to show"
+                  >
+                    <Icon name="cog" size={16} />
+                  </button>
+                )}
+              </div>
+              {section.id === 'tools' && choosingTools && !collapsed && (
+                <div className="fb-nav-tools" role="group" aria-label="Tools shown in the menu">
+                  <p>Show in the menu:</p>
+                  {allTools.map((tool) => (
+                    <label key={tool.id}>
+                      <input type="checkbox" checked={!hiddenTools.includes(tool.id)} onChange={() => onToggleTool(tool.id)} />
+                      <span>{tool.label}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
               {!closed &&
                 section.items.map((item) => {
                   const label = itemLabel(item, { focusActive, focusClock });

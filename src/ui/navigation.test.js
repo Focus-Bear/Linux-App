@@ -17,7 +17,7 @@ test('sections follow the Windows left menu order', () => {
 
 test('Day Plan sits under MAIN, above Start Focus Session (#140)', () => {
   const main = NAV_SECTIONS.find((s) => s.id === 'main');
-  assert.deepEqual(main.items.map((i) => i.id).slice(0, 2), ['day-plan', 'focus-session']);
+  assert.deepEqual(main.items.map((i) => i.id).slice(0, 3), ['achievements', 'day-plan', 'focus-session']);
   assert.equal(resolveDestination('day-plan').page, 'day-plan');
 });
 
@@ -100,7 +100,7 @@ test('focus-session-result messages map to focus state', () => {
 
 test('MAIN has Start Micro Break, and the break reminder can open it (#142)', () => {
   const main = NAV_SECTIONS.find((section) => section.id === 'main');
-  assert.deepEqual(main.items.map((i) => i.label), ['Day Plan', 'Start Focus Session', 'Start Micro Break']);
+  assert.deepEqual(main.items.map((i) => i.label), ['Achievements', 'Day Plan', 'Start Focus Session', 'Start Micro Break']);
   assert.equal(resolveDestination('micro-break').page, 'micro-break');
   assert.equal(isNavigable('micro-break'), true);
   assert.equal(resolveDestination('settings', 'settings-breaks').page, 'settings-breaks');
