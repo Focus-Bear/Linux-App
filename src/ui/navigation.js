@@ -40,6 +40,8 @@ export const NAV_SECTIONS = [
         icon: 'blocking',
         children: [
           { id: 'blocking-schedule', label: 'Blocking Schedule', icon: 'schedule', page: 'blocking-schedule' },
+          // The account's block lists ("focus modes"), used by focus sessions and schedules.
+          { id: 'block-lists', label: 'Block Lists', icon: 'blocking', page: 'block-lists' },
           { id: 'super-distracting-sites', label: 'Super Distracting Sites', icon: 'globe', page: 'super-distracting-sites' },
           { id: 'keyword-blocking', label: 'Keyword Blocking', icon: 'keyword', page: 'keyword-blocking' },
         ],

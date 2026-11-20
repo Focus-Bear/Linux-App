@@ -46,9 +46,13 @@ export function createHabitApi({ fetch, getToken, getDeviceId, baseUrl = API_BAS
   async function request(method, path, body) {
     const token = await getToken();
     if (!token) throw new HabitApiError('Not signed in', 401);
+    // No Content-Type without a body: the server answers 400 to a DELETE that
+    // announces JSON and sends none.
+    const headers = { Authorization: `Bearer ${token}` };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     const response = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok) throw new HabitApiError(`${method} ${path} failed: ${response.status}`, response.status);

@@ -23,11 +23,29 @@ import {
   stepMinutes,
   totalMs,
 } from '../electron/focusSessionModel.js';
+import { listSummary, wireToInput } from '../electron/blockingModel.js';
 
 const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
 
 // Goal and block list carried from the end screen's "Start a new session".
 let prefill = null;
+
+// The block list used last time is offered first, as on Windows (MOST_RECENT_FOCUS_MODE_ID).
+const LAST_MODE_KEY = 'fb_last_focus_mode';
+const readLastMode = () => {
+  try {
+    return window.localStorage.getItem(LAST_MODE_KEY) || '';
+  } catch {
+    return '';
+  }
+};
+const saveLastMode = (id) => {
+  try {
+    if (id) window.localStorage.setItem(LAST_MODE_KEY, id);
+  } catch {
+    // not remembered
+  }
+};
 
 /**
  * MAIN > Focus Session. Three screens, following the Windows app:
@@ -36,7 +54,7 @@ let prefill = null;
  *   end     - "Great job" with the session's numbers and a reflection (SessionCompleteView.cs)
  * The session itself lives in the main process (see useFocusSession.js).
  */
-export default function FocusSessionPage({ session, now, loaded }) {
+export default function FocusSessionPage({ session, now, loaded, blocking, onEditBlockLists }) {
   if (!loaded) {
     return (
       <div className="fb-page fb-focus">
@@ -44,14 +62,14 @@ export default function FocusSessionPage({ session, now, loaded }) {
       </div>
     );
   }
-  if (!session) return <StartView />;
+  if (!session) return <StartView blocking={blocking} onEditBlockLists={onEditBlockLists} />;
   if (session.status === 'ended') return <EndView session={session} />;
   return <RunningView session={session} now={now} />;
 }
 
 // ---------------------------------------------------------------- start ----
 
-function StartView() {
+function StartView({ blocking, onEditBlockLists }) {
   // The usual length from Settings > Focus Sessions (kPomodoroDurationMinutes).
   const [minutes, setMinutes] = useState(() =>
     defaultMinutes({ kPomodoroDurationMinutes: auth0Sync.getValue('pomodoroMinutes') }),
@@ -71,7 +89,12 @@ function StartView() {
       .then((list) => {
         if (cancelled) return;
         setModes(list);
-        setModeId((current) => current || pickDefaultMode(selectableModes(list))?.id || '');
+        setModeId((current) => {
+          if (current) return current;
+          const usable = selectableModes(list);
+          const last = readLastMode();
+          return usable.find((mode) => mode.id === last)?.id || pickDefaultMode(usable)?.id || '';
+        });
       })
       .catch((err) => {
         console.error('[Focus] Could not load block lists:', err);
@@ -83,6 +106,12 @@ function StartView() {
   }, []);
 
   const options = selectableModes(modes || []);
+  const selectedMode = options.find((option) => option.id === modeId) || null;
+  // A blocking schedule is on: say so, as the Windows start screen does.
+  const running = blocking?.inForce?.source === 'schedule' ? blocking.inForce.schedule : null;
+  const scheduleNote = running
+    ? `“${running.name}” is blocking until ${wireToInput(running.end_time)}. You can still start a focus session.`
+    : '';
 
   const applyMinutes = (value) => {
     setMinutes(value);
@@ -111,6 +140,7 @@ function StartView() {
       draft = createSession({ modeId: mode.id, modeName: mode.name, intention: goal, minutes: length, now: Date.now() });
       await focusApi.startSession(draft);
       synced = true;
+      saveLastMode(mode.id);
     } catch (err) {
       // Offline or the server said no: still let the person focus. The
       // session just won't appear in their stats.
@@ -136,7 +166,7 @@ function StartView() {
   return (
     <div className="fb-page fb-focus">
       <h1 className="fb-page__title">Start a focus session</h1>
-      <p className="fb-page__subtitle">Your super distracting sites stay blocked while you work.</p>
+      <p className="fb-page__subtitle">Choose how long to focus and which block list keeps distractions away.</p>
 
       <div className="fb-focus__bear">
         <img src={LOGO} alt="" />
@@ -202,6 +232,14 @@ function StartView() {
             <option key={option.id} value={option.id}>{option.name}</option>
           ))}
         </select>
+
+        <p className="fb-focus__help">
+          {selectedMode ? `${listSummary(selectedMode)} ` : ''}
+          {onEditBlockLists && (
+            <button type="button" className="fb-focus__link" onClick={onEditBlockLists}>Edit block lists</button>
+          )}
+        </p>
+        {scheduleNote && <p className="fb-focus__help">{scheduleNote}</p>}
 
         {error && <p className="fb-focus__error" role="alert">{error}</p>}
 

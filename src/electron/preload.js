@@ -104,6 +104,10 @@ const API = {
         },
     },
 
+    // The block list in force: { blocklist: string[], allowOnly: string[] | null }.
+    // The main process adds it to the always-blocked sites and tells the extensions.
+    setModeBlocking: function(blocking) { return ipcRenderer.invoke('blocking:set-mode', blocking); },
+
     // Micro breaks. The main process owns the break timer and the reminder
     // window; see the "Micro breaks" section of main.js and breakModel.js.
     breaks: {

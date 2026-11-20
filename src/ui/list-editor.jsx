@@ -19,6 +19,8 @@ export default function ListEditor({
   onAdd,
   onRemove,
   children,
+  // true: a card inside another page (no page title of its own)
+  embedded = false,
 }) {
   const [selected, setSelected] = useState(() => new Set());
   const [showDialog, setShowDialog] = useState(false);
@@ -58,11 +60,21 @@ export default function ListEditor({
   };
 
   return (
-    <div className="fb-page">
-      <h1 className="fb-page__title">{title}</h1>
-      <p className="fb-page__subtitle">{description}</p>
+    <div className={embedded ? undefined : 'fb-page'}>
+      {!embedded && (
+        <>
+          <h1 className="fb-page__title">{title}</h1>
+          <p className="fb-page__subtitle">{description}</p>
+        </>
+      )}
 
       <section className="fb-card">
+        {embedded && (
+          <>
+            <h2 className="fb-card__title">{title}</h2>
+            <p className="fb-card__desc">{description}</p>
+          </>
+        )}
         <ul className="fb-list" aria-label={title}>
           {items.length === 0 && <li className="fb-list__empty">{emptyText}</li>}
           {items.map((item, index) => (

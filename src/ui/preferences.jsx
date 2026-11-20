@@ -12,6 +12,8 @@ import SettingsAboutPage from './settings-about.jsx';
 import SettingsBreaksPage from './settings-breaks.jsx';
 import MicroBreakPage from './micro-break.jsx';
 import { useBreaks } from './useBreaks.js';
+import { useBlocking } from './useBlocking.js';
+import BlockListsPage from './block-lists.jsx';
 import Distracting_sites_page from './distracting-sites';
 import BlockingSchedule from './blocking-schedule';
 import Keywords_page from './keyword-page';
@@ -40,6 +42,7 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
   const focus = useFocusSession();
   const focusActive = focus.active;
   const breaks = useBreaks();
+  const blocking = useBlocking(focus.session);
 
   const { item, child, page, webview } = resolveDestination(activeId, childIds[activeId]);
 
@@ -101,9 +104,19 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
           />
         );
       case 'focus-session':
-        return <FocusSessionPage session={focus.session} now={focus.now} loaded={focus.loaded} />;
+        return (
+          <FocusSessionPage
+            session={focus.session}
+            now={focus.now}
+            loaded={focus.loaded}
+            blocking={blocking}
+            onEditBlockLists={() => openChild('blocking', 'block-lists')}
+          />
+        );
       case 'blocking-schedule':
-        return <BlockingSchedule />;
+        return <BlockingSchedule blocking={blocking} onEditBlockLists={() => openChild('blocking', 'block-lists')} />;
+      case 'block-lists':
+        return <BlockListsPage blocking={blocking} onOpenDistractingSites={() => openChild('blocking', 'super-distracting-sites')} />;
       case 'super-distracting-sites':
         return <Distracting_sites_page />;
       case 'keyword-blocking':

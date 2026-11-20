@@ -172,3 +172,12 @@ test('nothing is sent when signed out', async () => {
   await assert.rejects(api.registerDevice(), (error) => error.status === 401);
   assert.equal(calls.length, 0);
 });
+
+test('a request without a body does not announce JSON (the server refuses such a DELETE)', async () => {
+  const { api, calls } = make([[204, null], [200, []]]);
+  await api.request('DELETE', '/blocking-schedules/s1');
+  await api.request('PUT', '/focus-mode', []);
+  assert.equal('Content-Type' in calls[0].headers, false);
+  assert.equal(calls[0].body, undefined);
+  assert.equal(calls[1].headers['Content-Type'], 'application/json');
+});

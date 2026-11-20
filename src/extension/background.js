@@ -8,6 +8,56 @@ let immediatelyBlock = false;
 
 const WHITELIST_DURATION_MS = 30 * 60 * 1000;
 
+// Allow list in force (a focus session or blocking schedule that uses an
+// allow list): null, or the only sites that may be opened. Sent by the app in
+// BLOCK_SETTINGS_UPDATE. The rule matches src/electron/blockingModel.js
+// (matchesEntry): lower case, without scheme and "www.", the entry anywhere in
+// the URL, "*" as a wildcard.
+let allowOnly = null;
+// The app renews the allow list every minute while it is in force. If the app
+// stops without saying so (crash, power cut), the allow list lapses at this
+// time instead of blocking the whole web until the app is next opened.
+let allowOnlyUntil = 0;
+
+// Never blocked by an allow list: Focus Bear's own pages and sign-in.
+const ALWAYS_ALLOWED_HOSTS = ['focusbear.io', 'auth0.com', 'localhost', '127.0.0.1'];
+
+function readAllowOnly(value, until) {
+  allowOnlyUntil = Number(until) || 0;
+  if (!Array.isArray(value) || Date.now() > allowOnlyUntil) return null;
+  return value.filter(e => typeof e === 'string' && e.trim());
+}
+
+function allowListInForce() {
+  return Boolean(allowOnly) && Date.now() <= allowOnlyUntil;
+}
+
+function normaliseEntry(entry) {
+  return String(entry).trim().toLowerCase()
+    .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
+}
+
+function matchesEntry(url, entry) {
+  const target = url.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');
+  const pattern = normaliseEntry(entry);
+  if (!pattern) return false;
+  if (!pattern.includes('*')) return target.includes(pattern);
+  const source = pattern.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+  try { return new RegExp(source).test(target); } catch { return false; }
+}
+
+// True when an allow list is in force and this page is not on it.
+function isOutsideAllowList(url) {
+  if (!allowListInForce() || !/^https?:\/\//i.test(url)) return false;
+  try {
+    const hostname = new URL(url).hostname;
+    if (ALWAYS_ALLOWED_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h))) return false;
+  } catch {
+    return false;
+  }
+  return !allowOnly.some(entry => matchesEntry(url, entry));
+}
+
 // Sent in every PING so Electron knows which browser to kill if extension goes missing.
 const BROWSER_ID = (() => {
   if (typeof browser !== 'undefined' && browser.runtime?.getBrowserInfo) return 'firefox';
@@ -15,8 +65,9 @@ const BROWSER_ID = (() => {
   return 'unknown';
 })();
 
-browser.storage.local.get(['whitelist', 'blocklist', 'immediatelyBlock']).then(result => {
+browser.storage.local.get(['whitelist', 'blocklist', 'immediatelyBlock', 'allowOnly', 'allowOnlyUntil']).then(result => {
   immediatelyBlock = result.immediatelyBlock === true;
+  allowOnly = readAllowOnly(result.allowOnly, result.allowOnlyUntil);
   whitelist = (result.whitelist || []).filter(e => e.expiresAt > Date.now());
   browser.storage.local.set({ whitelist });
   blocklist = result.blocklist || [];
@@ -68,9 +119,11 @@ function isBlockedUrl(url) {
 function maybeBlockTab(tabId, url) {
   if (!url || !url.startsWith('http')) return;
   if (url.startsWith(browser.runtime.getURL(''))) return;
-  if (isWhitelisted(url) || !isBlockedUrl(url)) return;
+  if (isWhitelisted(url)) return;
+  const listed = isBlockedUrl(url);
+  if (!listed && !isOutsideAllowList(url)) return;
   const blockPageUrl = browser.runtime.getURL('blocked.html') +
-    `?url=${encodeURIComponent(url)}&reason=tab_switch`;
+    `?url=${encodeURIComponent(url)}&reason=${listed ? 'tab_switch' : 'allow_list'}`;
   browser.tabs.update(tabId, { url: blockPageUrl }).catch(() => {});
 }
 
@@ -117,8 +170,9 @@ function connectToNativeHost() {
 
         case 'BLOCK_SETTINGS_UPDATE':
           immediatelyBlock = message.data?.immediatelyBlock === true;
-          log(`Immediately block: ${immediatelyBlock}`);
-          browser.storage.local.set({ immediatelyBlock });
+          allowOnly = readAllowOnly(message.data?.allowOnly, message.data?.allowOnlyUntil);
+          log(`Immediately block: ${immediatelyBlock}; allow list: ${allowOnly ? allowOnly.length + ' sites' : 'off'}`);
+          browser.storage.local.set({ immediatelyBlock, allowOnly, allowOnlyUntil });
           browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
             if (tabs[0]?.url) maybeBlockTab(tabs[0].id, tabs[0].url);
           }).catch(() => {});
@@ -254,6 +308,17 @@ browser.webRequest.onBeforeRequest.addListener(
       } catch (error) {
         log(`Error checking pattern ${pattern}: ${error.message}`);
       }
+    }
+
+    // An allow list is in force: only pages on it open. Checked for the page
+    // itself, not for what an allowed page loads.
+    if (details.type === 'main_frame' && isOutsideAllowList(url)) {
+      log(`Blocking (not on the allow list): ${url}`);
+      const blockPageUrl = browser.runtime.getURL('blocked.html') +
+        `?url=${encodeURIComponent(url)}` +
+        `&value=${encodeURIComponent('Not on your allow list')}` +
+        `&reason=allow_list`;
+      return { redirectUrl: blockPageUrl };
     }
 
     return { cancel: false };

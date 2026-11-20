@@ -24,7 +24,7 @@ import {
   restoreSession,
   resumeSession,
 } from './focusSessionModel.js';
-import { DEFAULT_BLOCK_SETTINGS, blockSettingsMessage, normaliseBlockSettings } from './blockSettings.js';
+import { ALLOW_ONLY_RENEW_MS, DEFAULT_BLOCK_SETTINGS, blockSettingsMessage, normaliseBlockSettings } from './blockSettings.js';
 import {
   WARNING_SECONDS,
   breaksActive,
@@ -47,7 +47,12 @@ const execFileAsync = promisify(execFile);
 const SOCKET_PATH = '/tmp/focusbear.sock';
 let socketServer = null;
 const socketClients = new Map();       // socket → {browser: string|null, lastPing: number}
-let currentBlocklist = [];
+let currentBlocklist = [];        // what the extensions block now: always-blocked + the list in force
+let alwaysBlocklist = [];         // the account's Super Distracting Sites and keywords
+// The block list in force (a focus session's or a blocking schedule's), from
+// the window (src/ui/useBlocking.js): extra entries to block and, for an
+// allow list, the only sites that may be opened.
+let modeBlocking = { blocklist: [], allowOnly: null };
 let currentWhitelist = [];
 let currentBlockSettings = { ...DEFAULT_BLOCK_SETTINGS };
 let warningWindow = null;
@@ -227,7 +232,9 @@ async function startSocketServer() {
 }
 
 function broadcastBlocklistUpdate(blocklist) {
-  currentBlocklist = blocklist;
+  alwaysBlocklist = Array.isArray(blocklist) ? blocklist : [];
+  currentBlocklist = [...new Set([...alwaysBlocklist, ...modeBlocking.blocklist])];
+  blocklist = currentBlocklist;
 
   const message = JSON.stringify({
     type: 'BLOCKLIST_UPDATE',
@@ -247,7 +254,8 @@ function broadcastBlocklistUpdate(blocklist) {
 }
 
 function broadcastBlockSettings(settings) {
-  currentBlockSettings = normaliseBlockSettings(settings);
+  // allowOnly comes from the block list in force, not from the saved settings.
+  currentBlockSettings = normaliseBlockSettings({ ...settings, allowOnly: modeBlocking.allowOnly });
   const message = blockSettingsMessage(currentBlockSettings);
   console.log(`[Socket] Broadcasting block settings to ${socketClients.size} clients:`, currentBlockSettings);
   for (const socket of socketClients.keys()) {
@@ -742,7 +750,7 @@ function setFocusSession(next) {
         isFocusActive = active;
         focusState.setActive(active);
         broadcastFocusState(active);
-        if (active) broadcastBlocklistUpdate(currentBlocklist);
+        if (active) broadcastBlocklistUpdate(alwaysBlocklist);
         console.log(active ? 'Focus session started' : 'Focus session ended');
     }
 
@@ -911,6 +919,35 @@ ipcMain.on('breaks:warning-answer', (event, action, minutes) => {
     closeBreakWarning();
     // Skip: a full interval. Postpone: the chosen minutes.
     scheduleBreak(action === 'postpone' ? nextBreakAt(breakConfig, Date.now(), normalisePostpone(minutes)) : fullInterval());
+});
+
+// The block list in force changed (a focus session started or ended, a
+// blocking schedule began or finished, or the list was edited).
+ipcMain.handle('blocking:set-mode', (event, input) => {
+    const strings = (list) => (Array.isArray(list) ? list.filter((entry) => typeof entry === 'string' && entry.trim()) : []);
+    const next = {
+        blocklist: strings(input && input.blocklist),
+        allowOnly: input && Array.isArray(input.allowOnly) ? strings(input.allowOnly) : null,
+    };
+    if (JSON.stringify(next) === JSON.stringify(modeBlocking)) return false;
+    modeBlocking = next;
+    console.log(`[Blocking] List in force: ${next.blocklist.length} extra blocked, ` +
+        (next.allowOnly ? `allow list of ${next.allowOnly.length}` : 'no allow list'));
+    broadcastBlocklistUpdate(alwaysBlocklist);
+    broadcastBlockSettings(currentBlockSettings);
+    return true;
+});
+
+// An allow list is renewed every minute while it is in force (see blockSettings.js),
+// and lifted when the app quits.
+setInterval(() => {
+    if (modeBlocking.allowOnly) broadcastBlockSettings(currentBlockSettings);
+}, ALLOW_ONLY_RENEW_MS);
+app.on('before-quit', () => {
+    if (!modeBlocking.allowOnly && modeBlocking.blocklist.length === 0) return;
+    modeBlocking = { blocklist: [], allowOnly: null };
+    broadcastBlocklistUpdate(alwaysBlocklist);
+    broadcastBlockSettings(currentBlockSettings);
 });
 
 // Tray rows ("Day Plan", "To-do list", ...): show that page in the main window.

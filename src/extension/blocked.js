@@ -43,6 +43,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (messageEl) {
       messageEl.textContent = 'This URL matches a blocking rule in your configuration.';
     }
+  } else if (blockType === 'allow_list') {
+    if (subtitleEl) {
+      subtitleEl.textContent = 'This site is not on your allow list';
+    }
+    if (messageEl) {
+      messageEl.textContent = 'Your block list only allows the sites you chose. Take a moment to refocus on what matters most.';
+    }
   } else if (blockType === 'keyword') {
     if (subtitleEl) {
       subtitleEl.textContent = 'Content contains restricted keyword';
