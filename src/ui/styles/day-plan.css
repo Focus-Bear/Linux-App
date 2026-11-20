@@ -146,6 +146,58 @@
     color: var(--fb-danger);
 }
 
+/* ---------- habit actions ---------- */
+/* The routine's button drops under a long title instead of squeezing it. */
+.fb-dayplan__card--morning .fb-dayplan__card-title,
+.fb-dayplan__card--evening .fb-dayplan__card-title,
+.fb-dayplan__card--custom .fb-dayplan__card-title {
+    min-width: 170px;
+}
+
+.fb-dayplan__card-head > .fb-btn {
+    margin-left: auto;
+}
+
+.fb-dayplan__habit {
+    flex-wrap: wrap;
+}
+
+.fb-dayplan__habit-actions {
+    display: flex;
+    flex: none;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.fb-dayplan__state {
+    flex: none;
+    min-width: 62px;
+    font-size: 12.5px;
+    font-weight: 600;
+    text-align: right;
+    color: var(--fb-text-subtle);
+}
+
+.fb-dayplan__state--done {
+    color: var(--fb-success);
+}
+
+.fb-dayplan__playing {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 920px;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border-color: var(--fb-orange);
+}
+
+.fb-dayplan__playing-text {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
 /* ---------- tasks ---------- */
 .fb-dayplan__tasks {
     position: sticky;

@@ -61,8 +61,8 @@ export const NAV_SECTIONS = [
   },
 ];
 
-/** Opens on Blocking (issue #48): the Linux app's main job is distraction blocking. */
-export const DEFAULT_ITEM_ID = 'blocking';
+/** Opens on the Day Plan, like the Windows app (it used to open on Blocking, #48). */
+export const DEFAULT_ITEM_ID = 'day-plan';
 
 export function allItems(sections = NAV_SECTIONS) {
   return sections.flatMap((section) => section.items);
