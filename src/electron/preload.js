@@ -201,6 +201,11 @@ const API = {
         return ipcRenderer.invoke('cleanup-app-data');
     },
 
+    // { version } of the running app
+    getAppInfo: function() {
+        return ipcRenderer.invoke('get-app-info');
+    },
+
     // App update notifications
     checkForUpdates: function() {
         return ipcRenderer.invoke('check-for-updates');

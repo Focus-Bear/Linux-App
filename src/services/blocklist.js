@@ -93,6 +93,12 @@ export function fromDeviceSettings(device = {}) {
   if (typeof device.kImmediatelyBlockDistractingSites === 'boolean') {
     mapped.immediatelyBlock = device.kImmediatelyBlockDistractingSites;
   }
+  // The other apps store this as a string ("25").
+  const minutes = Number(device.kPomodoroDurationMinutes);
+  if (device.kPomodoroDurationMinutes !== undefined && device.kPomodoroDurationMinutes !== null &&
+      Number.isFinite(minutes) && minutes >= 1) {
+    mapped.pomodoroMinutes = Math.min(480, Math.round(minutes));
+  }
   return mapped;
 }
 
@@ -103,6 +109,10 @@ export function toDeviceSettings(device = {}, settings = {}) {
   if (settings.selectedBearMode) next.kCuddlyModeEnabled = settings.selectedBearMode === 'cuddly';
   if (typeof settings.immediatelyBlock === 'boolean') {
     next.kImmediatelyBlockDistractingSites = settings.immediatelyBlock;
+  }
+  const minutes = Number(settings.pomodoroMinutes);
+  if (settings.pomodoroMinutes !== undefined && Number.isFinite(minutes) && minutes >= 1) {
+    next.kPomodoroDurationMinutes = String(Math.min(480, Math.round(minutes)));
   }
   return next;
 }

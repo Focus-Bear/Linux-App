@@ -7,6 +7,8 @@ import { useFocusSession } from './useFocusSession.js';
 import { formatClock, remainingMs } from '../electron/focusSessionModel.js';
 import FocusSessionPage from './focus-session.jsx';
 import DayPlanPage from './day-plan.jsx';
+import SettingsFocusPage from './settings-focus.jsx';
+import SettingsAboutPage from './settings-about.jsx';
 import Distracting_sites_page from './distracting-sites';
 import BlockingSchedule from './blocking-schedule';
 import Keywords_page from './keyword-page';
@@ -82,6 +84,10 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
         return <Keywords_page />;
       case 'settings-ui':
         return <SettingsUIPage />;
+      case 'settings-focus':
+        return <SettingsFocusPage />;
+      case 'settings-about':
+        return <SettingsAboutPage />;
       case 'settings-account':
         return <AccountPage user={user} syncStatus={syncStatus} onForceSync={onForceSync} onLogout={onLogout} />;
       case 'settings-uninstall':

@@ -127,6 +127,18 @@ test('a round trip through the device settings keeps the values', () => {
   assert.deepEqual(fromDeviceSettings(toDeviceSettings({}, settings)), settings);
 });
 
+test('the usual session length is read from and written as the string the other apps use', () => {
+  assert.equal(fromDeviceSettings({ kPomodoroDurationMinutes: '45' }).pomodoroMinutes, 45);
+  assert.equal(fromDeviceSettings({ kPomodoroDurationMinutes: 50 }).pomodoroMinutes, 50);
+  assert.equal(fromDeviceSettings({ kPomodoroDurationMinutes: '9999' }).pomodoroMinutes, 480);
+  assert.equal('pomodoroMinutes' in fromDeviceSettings({ kPomodoroDurationMinutes: 'x' }), false);
+  assert.equal('pomodoroMinutes' in fromDeviceSettings({ kPomodoroDurationMinutes: null }), false);
+  assert.equal('pomodoroMinutes' in fromDeviceSettings({ kPomodoroDurationMinutes: 0 }), false);
+  assert.equal(toDeviceSettings({}, { pomodoroMinutes: 30 }).kPomodoroDurationMinutes, '30');
+  assert.equal('kPomodoroDurationMinutes' in toDeviceSettings({}, {}), false);
+  assert.equal(toDeviceSettings({ kPomodoroDurationMinutes: '50' }, { urlList: [] }).kPomodoroDurationMinutes, '50', 'kept when not being changed');
+});
+
 test('an empty list is saved as empty, not skipped', () => {
   assert.deepEqual(toDeviceSettings({ kArrBlockedUrls: ['a.com'] }, { urlList: [] }).kArrBlockedUrls, []);
 });

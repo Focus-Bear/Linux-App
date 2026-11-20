@@ -18,7 +18,9 @@ const SYNCED_STATES = {
   // Sites and keywords share this list (kArrBlockedUrls); see blocklist.js.
   urlList: ['facebook.com', 'x.com'],
   // "Immediately block super distracting sites" (kImmediatelyBlockDistractingSites)
-  immediatelyBlock: false
+  immediatelyBlock: false,
+  // Usual focus session length in minutes (kPomodoroDurationMinutes)
+  pomodoroMinutes: 25
 };
 
 const API_BASE_URL = 'https://api.focusbear.io';

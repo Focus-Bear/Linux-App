@@ -3,7 +3,6 @@ import './styles/distracting-sites.css'; // shared .fb-input and .fb-dialog
 import './styles/focus-session.css';
 import { focusApi } from '../services/focusApi.js';
 import { auth0Sync } from '../services/sync.js';
-import { parseDeviceSettings } from '../services/blocklist.js';
 import {
   DEFAULT_MODE_NAME,
   MAX_ACHIEVEMENT_CHARS,
@@ -53,8 +52,9 @@ export default function FocusSessionPage({ session, now, loaded }) {
 // ---------------------------------------------------------------- start ----
 
 function StartView() {
+  // The usual length from Settings > Focus Sessions (kPomodoroDurationMinutes).
   const [minutes, setMinutes] = useState(() =>
-    defaultMinutes(parseDeviceSettings(auth0Sync.rawAPIData?.MacOS)),
+    defaultMinutes({ kPomodoroDurationMinutes: auth0Sync.getValue('pomodoroMinutes') }),
   );
   const [lengthText, setLengthText] = useState(() => formatLength(minutes));
   const [goal, setGoal] = useState(() => prefill?.intention || '');

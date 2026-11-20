@@ -40,54 +40,20 @@ const UpdateNotification = function() {
         setDismissedVersion(status.latestVersion || '');
     };
 
+    // Themed banner (tokens.css), so it reads in dark mode too.
     return (
-        <div
-            role="status"
-            aria-live="polite"
-            style={{
-                padding: '10px 20px',
-                backgroundColor: '#fff4d6',
-                borderBottom: '1px solid #f0c674',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                gap: '15px',
-                flexWrap: 'wrap'
-            }}
-        >
-            <span style={{ fontSize: '14px', color: '#5a4500' }}>
+        <div className="fb-update-banner" role="status" aria-live="polite">
+            <span>
                 <strong>Focus Bear {status.latestVersion}</strong> is available
                 {status.currentVersion ? ` (you have ${status.currentVersion})` : ''}.
             </span>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="fb-row">
                 {status.downloadUrl && (
-                    <button
-                        onClick={handleDownload}
-                        style={{
-                            padding: '4px 12px',
-                            backgroundColor: '#ff9500',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '3px',
-                            cursor: 'pointer',
-                            fontSize: '12px'
-                        }}
-                    >
+                    <button type="button" className="fb-btn fb-btn--primary fb-btn--small" onClick={handleDownload}>
                         Download
                     </button>
                 )}
-                <button
-                    onClick={handleDismiss}
-                    style={{
-                        padding: '4px 12px',
-                        backgroundColor: 'transparent',
-                        color: '#5a4500',
-                        border: '1px solid #c9a55a',
-                        borderRadius: '3px',
-                        cursor: 'pointer',
-                        fontSize: '12px'
-                    }}
-                >
+                <button type="button" className="fb-btn fb-btn--gray fb-btn--small" onClick={handleDismiss}>
                     Dismiss
                 </button>
             </div>
