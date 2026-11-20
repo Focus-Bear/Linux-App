@@ -52,7 +52,7 @@ test('a remembered sub-page is used when it belongs to the item', () => {
 
 test('Settings has Focus Sessions, Subscription and About next to UI, Account and Uninstall (#144)', () => {
   const settings = allItems().find((i) => i.id === 'settings');
-  assert.deepEqual(settings.children.map((c) => c.label), ['UI', 'Focus Sessions', 'Breaks', 'Account', 'Subscription', 'About', 'Uninstall']);
+  assert.deepEqual(settings.children.map((c) => c.label), ['UI', 'Strictness', 'Focus Sessions', 'Breaks', 'Accessibility', 'Account', 'Subscription', 'About', 'Uninstall']);
   assert.equal(resolveDestination('settings', 'settings-focus').page, 'settings-focus');
   assert.equal(resolveDestination('settings', 'settings-about').page, 'settings-about');
   const subscription = resolveDestination('settings', 'settings-subscription');

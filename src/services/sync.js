@@ -24,7 +24,12 @@ const SYNCED_STATES = {
   // Settings > Breaks: "Enable Breaks" (kUserdefaultsBreaksEnabledFromOnboarding)
   breaksEnabled: true,
   // "Start breaks automatically" (kBreakAutoStartEnabled)
-  breakAutoStart: false
+  breakAutoStart: false,
+  // Settings > Accessibility: "Prefer reduced motion" (kIsReducedMotion)
+  reducedMotion: false,
+  // Settings > Focus Sessions: focus music when a session starts
+  // (kFocusMusicAutoStartPreference: 'ask' | 'play' | 'off')
+  focusMusicAutoStart: 'ask'
 };
 
 const API_BASE_URL = 'https://api.focusbear.io';

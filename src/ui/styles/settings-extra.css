@@ -1,0 +1,89 @@
+/* Settings pages added in L16: Strictness, Accessibility, Account extras. */
+.fb-settings__options {
+  display: grid;
+  gap: 10px;
+}
+
+.fb-settings__option,
+.fb-settings__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.fb-settings__option {
+  padding: 12px 14px;
+  border: 1.5px solid var(--fb-border-strong);
+  border-radius: 12px;
+  background: var(--fb-surface-raised);
+}
+
+.fb-settings__option--on {
+  border-color: var(--fb-orange-strong);
+  background: var(--fb-surface-soft);
+}
+
+.fb-settings__option input,
+.fb-settings__check input {
+  margin-top: 3px;
+  accent-color: var(--fb-orange-strong);
+}
+
+.fb-settings__option-text {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--fb-text-muted);
+}
+
+.fb-settings__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fb-text-orange);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.fb-settings__id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+
+.fb-settings__id code {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--fb-surface-soft);
+  border: 1px solid var(--fb-border);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.fb-settings__danger {
+  border-color: var(--fb-danger);
+}
+
+.fb-settings__status {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--fb-text-muted);
+}
+
+.fb-settings__status--error {
+  color: var(--fb-danger);
+}
+
+/* "Prefer reduced motion" (Settings > Accessibility). */
+:root[data-reduced-motion='1'] *,
+:root[data-reduced-motion='1'] *::before,
+:root[data-reduced-motion='1'] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}

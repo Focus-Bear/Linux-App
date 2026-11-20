@@ -3,6 +3,7 @@ import './styles/distracting-sites.css'; // shared .fb-input
 import './styles/focus-session.css';
 import { useSyncedState } from '../services/sync.js';
 import { clampMinutes, formatLength, parseLength, startLabel, stepMinutes } from '../electron/focusSessionModel.js';
+import { MUSIC_CHOICES, normaliseMusicChoice } from '../services/settingsModel.js';
 
 /**
  * Settings > Focus Sessions. The usual session length, saved to the account as
@@ -12,6 +13,8 @@ import { clampMinutes, formatLength, parseLength, startLabel, stepMinutes } from
 export default function SettingsFocusPage() {
   const [saved, setSaved, isLoading] = useSyncedState('pomodoroMinutes');
   const minutes = clampMinutes(saved);
+  const [musicSaved, setMusicSaved, musicLoading] = useSyncedState('focusMusicAutoStart');
+  const music = normaliseMusicChoice(musicSaved);
   const [text, setText] = useState(() => formatLength(minutes));
 
   useEffect(() => {
@@ -70,6 +73,27 @@ export default function SettingsFocusPage() {
           Hours and minutes (HH:MM), up to 8 hours. The start screen will offer &quot;{startLabel(minutes)}&quot;; you can
           still change the length for each session. Saved to your account, so your other devices use it too.
         </p>
+      </section>
+
+      <section className="fb-card" aria-busy={musicLoading} aria-labelledby="focus-music-setting">
+        <h2 id="focus-music-setting" className="fb-card__title">Focus music when a session starts</h2>
+        <p className="fb-card__desc">
+          Focus Bear can start its focus music with each session: the track you played last, or a random one.
+        </p>
+        <div className="fb-segmented" role="group" aria-labelledby="focus-music-setting">
+          {MUSIC_CHOICES.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              aria-pressed={music === option.id}
+              onClick={() => setMusicSaved(option.id)}
+              disabled={musicLoading}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <p className="fb-focus__help">Saved to your account, so your other devices use it too.</p>
       </section>
     </div>
   );
