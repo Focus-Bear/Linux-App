@@ -1,7 +1,7 @@
 // Sidebar navigation model. Mirrors the Windows app's left menu
 // (FocusBearMainWindow.xaml + Core/Navigation/LeftMenuRules.cs): sections
 // MAIN / TOOLS / PREFERENCES, labels from config.json "leftMenuVcInfo".
-// Entries the Linux app doesn't have yet (Day Plan, Habits, Micro Breaks,
+// Entries the Linux app doesn't have yet (Habits, Micro Breaks,
 // Brain Dump, Focus Music, Time Tracker, ...) are tracked as GitHub issues.
 //
 // Each page is either a React page (`page`) or an embedded dashboard webview
@@ -13,6 +13,8 @@ export const NAV_SECTIONS = [
     id: 'main',
     title: 'MAIN',
     items: [
+      // Today's routines, meetings and tasks (src/ui/day-plan.jsx).
+      { id: 'day-plan', label: 'Day Plan', icon: 'dayplan', page: 'day-plan' },
       // Start / running / end screens (src/ui/focus-session.jsx).
       { id: 'focus-session', label: 'Start Focus Session', activeLabel: 'Focusing', icon: 'focus', page: 'focus-session' },
     ],

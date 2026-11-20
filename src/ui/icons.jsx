@@ -7,6 +7,12 @@ const PATHS = {
       <path d="M12 9v4l2.5 2.5M9 2h6M12 2v3" />
     </>
   ),
+  dayplan: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18M7 14h6M7 17h9" />
+    </>
+  ),
   todo: (
     <>
       <circle cx="12" cy="12" r="9" />

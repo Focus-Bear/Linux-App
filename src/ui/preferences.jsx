@@ -6,6 +6,7 @@ import { DEFAULT_ITEM_ID, isNavigable, resolveDestination } from './navigation.j
 import { useFocusSession } from './useFocusSession.js';
 import { formatClock, remainingMs } from '../electron/focusSessionModel.js';
 import FocusSessionPage from './focus-session.jsx';
+import DayPlanPage from './day-plan.jsx';
 import Distracting_sites_page from './distracting-sites';
 import BlockingSchedule from './blocking-schedule';
 import Keywords_page from './keyword-page';
@@ -64,6 +65,13 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
 
   const renderPage = () => {
     switch (page) {
+      case 'day-plan':
+        return (
+          <DayPlanPage
+            onOpenTodoList={() => setActiveId('todo-list')}
+            onEditHabits={() => setActiveId('edit-habits')}
+          />
+        );
       case 'focus-session':
         return <FocusSessionPage session={focus.session} now={focus.now} loaded={focus.loaded} />;
       case 'blocking-schedule':
