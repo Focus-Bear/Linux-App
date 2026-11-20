@@ -1,0 +1,82 @@
+/*
+ * Shared buttons, matching the Windows app's styles (App.xaml / Theme/*.xaml):
+ *   .fb-btn--primary    light-orange fill + orange border  (BtnStyleLightOrangeBordered)
+ *   .fb-btn--secondary  plain fill + orange border         (BtnStyleClearOrangeBordered)
+ *   .fb-btn--gray       plain fill + grey border           (BtnStyleClearGrayBordered)
+ *   .fb-btn--danger     destructive
+ *   .fb-btn--small      compact variant
+ * Use these everywhere instead of per-page button CSS.
+ */
+.fb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 7px 18px;
+  margin: 0;
+  border: 1.5px solid var(--fb-btn-secondary-border);
+  border-radius: var(--fb-radius);
+  background: var(--fb-btn-secondary-bg);
+  color: var(--fb-btn-secondary-fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.fb-btn:hover:not(:disabled) {
+  background: var(--fb-btn-secondary-bg-hover);
+}
+
+.fb-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--fb-focus-ring);
+}
+
+.fb-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fb-btn--primary {
+  background: var(--fb-btn-primary-bg);
+  border-color: var(--fb-btn-primary-border);
+  color: var(--fb-btn-primary-fg);
+}
+
+.fb-btn--primary:hover:not(:disabled) {
+  background: var(--fb-btn-primary-bg-hover);
+}
+
+.fb-btn--gray {
+  border-color: var(--fb-btn-gray-border);
+}
+
+.fb-btn--gray:hover:not(:disabled) {
+  background: var(--fb-surface-hover);
+}
+
+.fb-btn--danger {
+  background: transparent;
+  border-color: var(--fb-danger);
+  color: var(--fb-danger);
+}
+
+.fb-btn--danger:hover:not(:disabled) {
+  background: var(--fb-danger-bg);
+}
+
+.fb-btn--small {
+  min-height: 28px;
+  padding: 4px 12px;
+  font-size: 12px;
+  border-radius: var(--fb-radius-sm);
+}
+
+.fb-btn--block {
+  width: 100%;
+}

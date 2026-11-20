@@ -48,8 +48,17 @@ const API = {
     },
 
     //Webview Management
-    switchWebView: function(id, metadata) {
-        return ipcRenderer.send('switch-webview', id, metadata);
+    // bounds: { x, y, width, height } of the element the page should cover (optional)
+    switchWebView: function(id, metadata, bounds) {
+        return ipcRenderer.send('switch-webview', id, metadata, bounds);
+    },
+
+    setWebViewBounds: function(bounds) {
+        return ipcRenderer.send('set-webview-bounds', bounds);
+    },
+
+    getFocusState: function() {
+        return ipcRenderer.invoke('get-focus-state');
     },
 
     hideAllWebViews: function() {
@@ -64,9 +73,11 @@ const API = {
     },
 
     onFocusStateChanged: function(callback) {
-      ipcRenderer.on('focus-state-changed', function(event, isActive) {
+      const listener = function(event, isActive) {
           callback(isActive);
-      });
+      };
+      ipcRenderer.on('focus-state-changed', listener);
+      return function() { ipcRenderer.removeListener('focus-state-changed', listener); };
     },
 
     //For Focus Session

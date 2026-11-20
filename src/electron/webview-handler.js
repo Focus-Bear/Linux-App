@@ -1,19 +1,40 @@
 // Enhanced webview-handler.js with optimized management
-import { WebContentsView, session, app } from 'electron';
+import { WebContentsView, session } from 'electron';
+import { webViewConfigs } from './webview-ids.js';
+
+export { webViewConfigs };
 
 const webViews = new Map();
 const webViewInjectionStatus = new Map();
+const webViewThemes = new Map();
 let currentActiveWebView = null;
 
+// Matches BackgroundColor in the Windows app's Theme/LightTheme.xaml / DarkTheme.xaml.
+const backgroundFor = (theme) => (theme === 'DARK' ? '#282828' : '#ffffff');
+
 export function createWebView(config) {
-    const { id, url, mainWindow, metadata } = config;
+    const { id, url, metadata } = config;
 
     if (webViews.has(id)) {
         console.log(`[WebView Handler] Reusing existing webview: ${id}`);
-        return webViews.get(id);
+        const existing = webViews.get(id);
+        // Theme switched since this page was loaded: hand the page the new metadata.
+        const theme = metadata?.theme;
+        const status = webViewInjectionStatus.get(id);
+        if (theme && webViewThemes.get(id) !== theme) {
+            webViewThemes.set(id, theme);
+            existing.setBackgroundColor(backgroundFor(theme));
+            if (status?.injected && !status.needsReload) {
+                callWindowFunction(existing, id, metadata);
+            }
+        }
+        return existing;
     }
 
     console.log(`[WebView Handler] Creating new webview: ${id}`);
+
+    const background = backgroundFor(metadata?.theme);
+    webViewThemes.set(id, metadata?.theme);
 
     const webView = new WebContentsView({
         webPreferences: {
@@ -22,11 +43,11 @@ export function createWebView(config) {
             session: session.fromPartition(`persist:dashboard`),
             webSecurity: true,
             allowRunningInsecureContent: false,
-            backgroundColor: '#ffffff'
+            backgroundColor: background
         }
     });
 
-    webView.setBackgroundColor('#ffffff');
+    webView.setBackgroundColor(background);
 
     webViewInjectionStatus.set(id, {injected: false, needsReload: false});
 
@@ -55,12 +76,12 @@ export function createWebView(config) {
             }
         });
 
-        webView.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+        webView.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
             console.error(`[WebView Handler] Failed to load ${id}:`, errorCode, errorDescription);
         });
     }
 
-    webView.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    webView.webContents.on('console-message', (event, level, message) => {
         console.log(`[WebView ${id} Console]:`, message);
     });
 
@@ -377,85 +398,3 @@ export function getCurrentActiveWebViewId() {
     return null;
 }
 
-export const webViewConfigs = {
-    'edit_habits': {
-        id: 'edit_habits',
-        url: 'https://dashboard.focusbear.io/'
-    },
-    'courses': {
-        id: 'courses',
-        url: 'https://dashboard.focusbear.io/webview/enrolled-courses' 
-    },
-    'get_support': {
-        id: 'get_support', 
-        url: 'https://dashboard.focusbear.io/webview/get-support'
-    },
-    
-    'upgrade-now': {
-        id: 'upgrade',
-        url: 'https://dashboard.focusbear.io/manage-subscription'
-    },   
-    'todo-player': {
-        id: 'player',
-        url: 'https://dashboard.focusbear.io/webview/todo-player'
-    }, 
-    'todo-list': {
-        id: 'list',
-        url: 'https://dashboard.focusbear.io/webview/tools-todo-list'
-    }, 
-    'focus-end': {
-        id: 'focus-end',
-        url: 'https://dashboard.focusbear.io/webview/focus-end'
-    }, 
-    'motivation': {
-        id: 'motivation',
-        url: 'https://dashboard.focusbear.io/webview/motivational-summary'
-    },
-    'stats': {
-        id: 'stats',
-        url: 'https://dashboard.focusbear.io/webview/stats'
-    },
-    'survey': {
-        id: 'survey',
-        url: 'https://dashboard.focusbear.io/webview/survey'
-    },
-
-    'blocking_schedule': {
-        id: 'blocking_schedule',
-        url: 'https://settings.focusbear.io'
-    }
-};
-
-// Tab to WebView mapping - defines which webview should be active for each tab combination
-export const getWebViewForTab = (activeTab, activeSubTab = null) => {
-    const tabMappings = {
-        'Help': 'get_support',
-        'Edit Habits': 'edit_habits', 
-        'Motivation': 'motivation',
-        'Blocks': {
-            'Blocking Schedule': 'blocking_schedule',
-            'Super Distracting Sites': null 
-        },
-        'Settings': {
-            'Super Distracting Sites': null, 
-            'Account': null, 
-            'General': null,
-            'AI': null, 
-            'Uninstall': null
-        }
-    };
-    
-    const mapping = tabMappings[activeTab];
-    
-
-    if (typeof mapping === 'string') {
-        return mapping;
-    }
-    
-    if (mapping && typeof mapping === 'object' && activeSubTab) {
-        return mapping[activeSubTab];
-    }
-    
-
-    return null;
-};

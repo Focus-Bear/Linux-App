@@ -568,15 +568,11 @@ app.on("ready", function(){
     });
 
     mainWindow.on('resize', () => {
-        const activeWebViewId = getCurrentActiveWebViewId();
-        if (activeWebViewId) {
-            let containerBounds = getWebviewContainerBounds();
-
-            if (activeWebViewId === 'blocking_schedule') {
-                containerBounds.height = containerBounds.height * 0.46;
-            }
-
-            resizeCurrentWebView(containerBounds);
+        // Once the renderer reports its layout it re-sends bounds on every resize
+        // (ResizeObserver), so only fall back to the fixed offsets before that.
+        if (rendererWebViewBounds) return;
+        if (getCurrentActiveWebViewId()) {
+            resizeCurrentWebView(getWebviewContainerBounds());
         }
     });
 
@@ -827,13 +823,25 @@ function handleAuthRedirect(url) {
 }
 
 //Webiew Handling
-ipcMain.on('switch-webview', function(event, webViewId, metadata) {
+// The renderer measures the element the webview should cover and sends its
+// bounds (window content coordinates), so the page sits exactly inside the
+// layout (sidebar, sub-navigation) instead of a hard-coded offset.
+let rendererWebViewBounds = null;
+
+function toWebViewBounds(rect) {
+    if (!rect) return null;
+    const round = (n) => Math.max(0, Math.round(Number(n) || 0));
+    return { x: round(rect.x), y: round(rect.y), width: round(rect.width), height: round(rect.height) };
+}
+
+ipcMain.on('switch-webview', function(event, webViewId, metadata, rect) {
     console.log(`[Main Process] switch-webview called for ${webViewId}`);
     console.log(`[Main Process] Metadata:`, {
         hasAccessToken: !!metadata?.access_token,
         hasClientId: !!metadata?.client_id,
         clientId: metadata?.client_id,
-        hasUser: !!metadata?.user
+        hasUser: !!metadata?.user,
+        theme: metadata?.theme
     });
 
     const config = webViewConfigs[webViewId];
@@ -842,18 +850,21 @@ ipcMain.on('switch-webview', function(event, webViewId, metadata) {
         return;
     }
 
-    const webView = createWebView({ ...config, mainWindow, metadata });
-    const bounds = getWebviewContainerBounds();
-
-    switch(webViewId) {
-        case 'blocking_schedule':
-            bounds.height = bounds.height * 0.46;
-            break;
-        case 'edit_habits':
-            break;
-    }
+    // Key webviews by the id the renderer asked for, so switchToWebView finds them.
+    createWebView({ ...config, id: webViewId, mainWindow, metadata });
+    rendererWebViewBounds = toWebViewBounds(rect) || rendererWebViewBounds;
+    const bounds = rendererWebViewBounds || getWebviewContainerBounds();
     switchToWebView(webViewId, mainWindow, bounds);
 });
+
+ipcMain.on('set-webview-bounds', function(event, rect) {
+    const bounds = toWebViewBounds(rect);
+    if (!bounds) return;
+    rendererWebViewBounds = bounds;
+    resizeCurrentWebView(bounds);
+});
+
+ipcMain.handle('get-focus-state', () => focusState.isActive());
 
 ipcMain.on('hide-all-webviews', function(event) {
     hideAllWebViews(mainWindow);

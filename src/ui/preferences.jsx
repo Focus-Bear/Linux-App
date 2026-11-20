@@ -1,227 +1,135 @@
-import React, { useState, useEffect } from 'react';
-import './distracting-sites'
-import './styles/preferences.css';
-import './styles/Consistent-colors.css'
+import { useEffect, useState } from 'react';
+import Sidebar from './Sidebar.jsx';
+import WebViewHost from './WebViewHost.jsx';
+import Icon from './icons.jsx';
+import { DEFAULT_ITEM_ID, focusStateFromResult, resolveDestination } from './navigation.js';
 import Distracting_sites_page from './distracting-sites';
-import MotivationPage from './motivation';
-import BlockingSchedule from './blocking-schedule'
-import AccountPage from './account';
+import BlockingSchedule from './blocking-schedule';
 import Keywords_page from './keyword-page';
 import UninstallPage from './uninstall-page';
-import { nativeAuthService } from '../services/nativeAuth.js';
+import AccountPage from './account';
+import SettingsUIPage from './settings-ui.jsx';
 
-const PreferencesPage = function({ user }) {
-  const [activeTab, setActiveTab] = useState('Help');
-  const [activeSettingsTab, setActiveSettingsTab] = useState('General');
-  const [activeBlocksTab, setActiveBlocksTab] = useState('Blocking Schedule');
+const COLLAPSED_KEY = 'fb_sidebar_collapsed';
+
+const readCollapsed = () => {
+  try {
+    return window.localStorage.getItem(COLLAPSED_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Main window after sign-in: Windows-style sidebar on the left, an optional
+ * second column for pages with sub-pages (Blocking, Settings), and the page.
+ */
+const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
+  const [activeId, setActiveId] = useState(DEFAULT_ITEM_ID);
+  const [childIds, setChildIds] = useState({});
+  const [focusActive, setFocusActive] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+
+  const { item, child, page, webview } = resolveDestination(activeId, childIds[activeId]);
 
   useEffect(() => {
-    const switchWebViewWithAuth = async () => {
-      const webViewId = getWebViewForCurrentTab();
-
-      if (webViewId) {
-        const metadata = await buildWebViewMetadata();
-        window.api.switchWebView?.(webViewId, metadata);
-      } else {
-        window.api.hideAllWebViews?.();
-      }
+    window.api?.getFocusState?.().then((active) => setFocusActive(Boolean(active))).catch(() => {});
+    const offState = window.api?.onFocusStateChanged?.((active) => setFocusActive(Boolean(active)));
+    window.api?.onFocusSessionResult?.((message) => {
+      const next = focusStateFromResult(message);
+      if (next !== null) setFocusActive(next);
+    });
+    return () => {
+      if (typeof offState === 'function') offState();
     };
+  }, []);
 
-    switchWebViewWithAuth();
-  }, [activeTab, activeSettingsTab, activeBlocksTab]);
-
-  const buildWebViewMetadata = async () => {
-    try {
-      const access_token = await nativeAuthService.getToken();
-      const id_token = nativeAuthService.idToken;
-      const client_id = nativeAuthService.clientId;
-      const user = nativeAuthService.getUser();
-
-      console.log('[Preferences] Building webview metadata:');
-      console.log('  - client_id:', client_id);
-      console.log('  - has access_token:', !!access_token);
-      console.log('  - has id_token:', !!id_token);
-      console.log('  - user email:', user?.email);
-
-      if (!client_id) {
-        console.error('[Preferences] WARNING: client_id is undefined!');
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      try {
+        window.localStorage.setItem(COLLAPSED_KEY, prev ? '0' : '1');
+      } catch {
+        // not persisted
       }
+      return !prev;
+    });
+  };
 
-      return {
-        access_token,
-        id_token,
-        client_id,
-        user,
-        theme: 'LIGHT',
-        lang: 'en',
-        font: 'default',
-        flags: [],
-        tasks: '[]',
-        total_duration: 0,
-        intention: '',
-        brain_dump: ''
-      };
-    } catch (error) {
-      console.error('Failed to build webview metadata:', error);
-      return null;
+  const handleAction = (navItem) => {
+    if (navItem.action === 'toggle-focus-session') {
+      window.api?.toggleFocusSession?.(!focusActive);
     }
   };
 
-  // Helper function to determine which webview should be active
-  const getWebViewForCurrentTab = () => {
-    // Map tab combinations to webview IDs
-    const tabMappings = {
-      'Help': 'get_support',
-      'Edit Habits': 'edit_habits',
-      'Motivation': 'motivation',
-      'Blocks': {
-        'Blocking Schedule': 'blocking_schedule',
-        'Super Distracting Sites': null, // Uses React component
-        'Keyword Blocking': null
-      },
-      'Settings': {
-        'Super Distracting Sites': null, // Uses React component
-        'Account': null, // Uses React component
-        'General': null,
-        'AI': null,
-        'Uninstall': null
-      }
-    };
-
-    const mapping = tabMappings[activeTab];
-    
-    // If it's a simple string mapping, return it
-    if (typeof mapping === 'string') {
-      return mapping;
+  const renderPage = () => {
+    switch (page) {
+      case 'blocking-schedule':
+        return <BlockingSchedule />;
+      case 'super-distracting-sites':
+        return <Distracting_sites_page />;
+      case 'keyword-blocking':
+        return <Keywords_page />;
+      case 'settings-ui':
+        return <SettingsUIPage />;
+      case 'settings-account':
+        return <AccountPage user={user} syncStatus={syncStatus} onForceSync={onForceSync} onLogout={onLogout} />;
+      case 'settings-uninstall':
+        return <UninstallPage />;
+      default:
+        return null;
     }
-    
-    // If it's an object (has sub-tabs), look up the appropriate sub-tab
-    if (mapping && typeof mapping === 'object') {
-      if (activeTab === 'Blocks') {
-        return mapping[activeBlocksTab];
-      } else if (activeTab === 'Settings') {
-        return mapping[activeSettingsTab];
-      }
-    }
-    
-    return null;
   };
 
-  const tabs = ['Help', 'Blocks', 'Settings', 'Edit Habits', 'Motivation'];
-  const settingsTabs = ['General', 'Super Distracting Sites', 'Account', 'AI', 'Uninstall'];
-  const blocksTabs = ['Blocking Schedule', 'Super Distracting Sites', 'Keyword Blocking'];
+  const syncText = { synced: 'Synced', error: 'Sync error', syncing: 'Syncing…', loading: 'Syncing…' }[syncStatus] || 'Local only';
 
   return (
-    <main className="app-container">
-      {/* Main Navigation */}
-      <nav className="main-nav">
-        {tabs.map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`nav-button ${activeTab === tab ? 'active' : ''}`}
-          >
-            {tab}
-          </button>
-        ))}
-      </nav>
+    <div className="fb-shell">
+      <Sidebar
+        activeId={item.id}
+        onSelect={(navItem) => setActiveId(navItem.id)}
+        onAction={handleAction}
+        focusActive={focusActive}
+        collapsed={collapsed}
+        onToggleCollapsed={toggleCollapsed}
+        footer={
+          user && (
+            <>
+              <div className="fb-sidebar__user" title={user.email || user.name}>{user.email || user.name}</div>
+              <div>{syncText}</div>
+            </>
+          )
+        }
+      />
 
-      {/* Sub-Navigation for Blocks Tab */}
-      {activeTab === 'Blocks' && (
-        <nav className="blocks-nav">
-          {blocksTabs.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveBlocksTab(tab)}
-              className={`blocks-button ${activeBlocksTab === tab ? 'active' : ''}`}
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-      )}
+      <main className="fb-main">
+        {item.children && (
+          <nav className="fb-subnav" aria-label={item.label}>
+            <h2 className="fb-subnav__title">{item.label}</h2>
+            {item.children.map((sub) => (
+              <button
+                key={sub.id}
+                type="button"
+                className="fb-nav-item"
+                aria-current={sub.id === child?.id ? 'page' : undefined}
+                onClick={() => setChildIds((prev) => ({ ...prev, [item.id]: sub.id }))}
+              >
+                <Icon name={sub.icon} />
+                <span className="fb-nav-item__label">{sub.label}</span>
+              </button>
+            ))}
+          </nav>
+        )}
 
-      {/* Sub-Navigation for Settings Tab */}
-      {activeTab === 'Settings' && (
-        <nav className="settings-nav">
-          {settingsTabs.map(tab => (
-            <button
-              key={tab}
-              onClick={() => setActiveSettingsTab(tab)}
-              className={`settings-button ${activeSettingsTab === tab ? 'active' : ''}`}
-            >
-              {tab}
-            </button>
-          ))}
-        </nav>
-      )}
-
-      {/* React Component Renders - only show when not using webviews */}
-      {/* BLOCK TAB */}
-      {(activeTab === 'Blocks' && activeBlocksTab === 'Super Distracting Sites') && (
-        <section className="content-area with-subnav light-orange">
-          <Distracting_sites_page />
-        </section>
-      )}
-
-      {(activeTab === 'Blocks' && activeBlocksTab === 'Blocking Schedule') && (
-        <div className="content-area with-subnav">
-          <BlockingSchedule />
-        </div>
-      )}
-
-      {(activeTab === 'Blocks' && activeBlocksTab === 'Keyword Blocking') && (
-        <div className="content-area with-subnav">
-          <Keywords_page />
-        </div>
-      )}
-
-      {(activeTab === 'Settings' && activeSettingsTab === 'Account') && (
-        <div className="content-area with-subnav">
-          <AccountPage />
-        </div>
-      )}
-
-      {(activeTab === 'Settings' && activeSettingsTab === 'Super Distracting Sites') && (
-        <div className="content-area with-subnav">
-          <Distracting_sites_page />
-        </div>
-      )}
-
-      {(activeTab === 'Settings' && activeSettingsTab === 'Uninstall') && (
-        <div className="content-area with-subnav">
-          <UninstallPage />
-        </div>
-      )}
-
-      {/* <section
-        id="webview-container" 
-        className={`content-area 
-          ${activeTab === 'Settings' || activeTab === 'Blocks' ? 'with-subnav' : ''}
-          ${shouldHideWebViewContainer() ? 'hideArea' : ''}
-        `}
-      >
-        Loading webview...
-      </section> */}
-
-    </main>
+        {webview ? (
+          <section className="fb-content fb-content--flush">
+            <WebViewHost key={webview} id={webview} label={(child || item).label} />
+          </section>
+        ) : (
+          <section className="fb-content">{renderPage()}</section>
+        )}
+      </main>
+    </div>
   );
-
-  function shouldHideWebViewContainer() {
-    const webViewId = getWebViewForCurrentTab();
-
-    return !webViewId && (
-      (activeTab === 'Settings' && (activeSettingsTab === 'Super Distracting Sites' || activeSettingsTab === 'Account')) ||
-      (activeTab === 'Blocks' && activeBlocksTab === 'Super Distracting Sites')
-    );
-  }
-
-  function getDefaultContent() {
-    if (activeTab === 'Settings' && !['Super Distracting Sites', 'Account'].includes(activeSettingsTab)) {
-      return `${activeSettingsTab} Settings`;
-    }
-    return `${activeTab} Content`;
-  }
 };
 
 export default PreferencesPage;
