@@ -4,7 +4,7 @@ import WebViewHost from './WebViewHost.jsx';
 import Icon from './icons.jsx';
 import { DEFAULT_ITEM_ID, isNavigable, resolveDestination } from './navigation.js';
 import { useFocusSession } from './useFocusSession.js';
-import { formatClock, remainingMs } from '../electron/focusSessionModel.js';
+import { clockMs, formatClock } from '../electron/focusSessionModel.js';
 import FocusSessionPage from './focus-session.jsx';
 import DayPlanPage from './day-plan.jsx';
 import SettingsFocusPage from './settings-focus.jsx';
@@ -186,7 +186,7 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
         onSelect={(navItem) => setActiveId(navItem.id)}
         onAction={handleAction}
         focusActive={focusActive}
-        focusClock={focusActive ? formatClock(remainingMs(focus.session, focus.now)) : ''}
+        focusClock={focusActive ? formatClock(Math.floor(clockMs(focus.session, focus.now) / 1000) * 1000) : ''}
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
         hiddenTools={hiddenTools}

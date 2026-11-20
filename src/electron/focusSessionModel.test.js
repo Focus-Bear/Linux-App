@@ -271,7 +271,7 @@ test('POST /focus-mode/{id}/finish body', () => {
     achievements: '',
     distractions: '',
     finish_time: '2026-11-21T09:10:00.000Z',
-    metadata: {},
+    metadata: { focus_duration_seconds: 600 },
     to_dos: [],
   });
   const withText = finishBody(ended, { achievements: 'Wrote 2 pages & a plan', distractions: ' phone ' });
