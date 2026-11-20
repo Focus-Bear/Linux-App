@@ -85,6 +85,32 @@ const API = {
       return function() { ipcRenderer.removeListener('focus-state-changed', listener); };
     },
 
+    // Focus session (start / running / end screens). The main process owns the
+    // session; see the "Focus session" section of main.js and focusSessionModel.js.
+    focusSession: {
+        get: function() { return ipcRenderer.invoke('focus-session:get'); },
+        // { modeId, modeName, intention, minutes, synced }
+        start: function(input) { return ipcRenderer.invoke('focus-session:start', input); },
+        pause: function() { return ipcRenderer.invoke('focus-session:pause'); },
+        resume: function() { return ipcRenderer.invoke('focus-session:resume'); },
+        adjust: function(deltaMinutes) { return ipcRenderer.invoke('focus-session:adjust', deltaMinutes); },
+        end: function() { return ipcRenderer.invoke('focus-session:end'); },
+        markReported: function() { return ipcRenderer.invoke('focus-session:mark-reported'); },
+        clear: function() { return ipcRenderer.invoke('focus-session:clear'); },
+        onChanged: function(callback) {
+            const listener = function(event, session) { callback(session); };
+            ipcRenderer.on('focus-session-changed', listener);
+            return function() { ipcRenderer.removeListener('focus-session-changed', listener); };
+        },
+    },
+
+    // The main process asks the window to show a page (e.g. tray > Start Focus Session).
+    onNavigate: function(callback) {
+        const listener = function(event, pageId) { callback(pageId); };
+        ipcRenderer.on('navigate-to', listener);
+        return function() { ipcRenderer.removeListener('navigate-to', listener); };
+    },
+
     //For Focus Session
     toggleFocusSession: function(flag) {
       if (flag){return ipcRenderer.send("focus-session-true")}

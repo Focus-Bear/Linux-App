@@ -9,7 +9,7 @@ const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
  * logo + collapse button, MAIN / TOOLS / PREFERENCES sections that fold,
  * orange line icons, selected entry as a cream pill with an orange border.
  */
-export default function Sidebar({ activeId, onSelect, onAction, focusActive, collapsed, onToggleCollapsed, footer }) {
+export default function Sidebar({ activeId, onSelect, onAction, focusActive, focusClock, collapsed, onToggleCollapsed, footer }) {
   const [closedSections, setClosedSections] = useState(() => new Set());
 
   const toggleSection = (id) =>
@@ -56,10 +56,10 @@ export default function Sidebar({ activeId, onSelect, onAction, focusActive, col
               </button>
               {!closed &&
                 section.items.map((item) => {
-                  const label = itemLabel(item, { focusActive });
+                  const label = itemLabel(item, { focusActive, focusClock });
                   const isAction = Boolean(item.action);
                   const current = !isAction && item.id === activeId;
-                  const sessionRunning = isAction && item.action === 'toggle-focus-session' && focusActive;
+                  const sessionRunning = item.id === 'focus-session' && focusActive;
                   return (
                     <button
                       key={item.id}

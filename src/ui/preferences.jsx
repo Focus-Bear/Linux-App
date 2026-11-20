@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar.jsx';
 import WebViewHost from './WebViewHost.jsx';
 import Icon from './icons.jsx';
-import { DEFAULT_ITEM_ID, focusStateFromResult, resolveDestination } from './navigation.js';
+import { DEFAULT_ITEM_ID, isNavigable, resolveDestination } from './navigation.js';
+import { useFocusSession } from './useFocusSession.js';
+import { formatClock, remainingMs } from '../electron/focusSessionModel.js';
+import FocusSessionPage from './focus-session.jsx';
 import Distracting_sites_page from './distracting-sites';
 import BlockingSchedule from './blocking-schedule';
 import Keywords_page from './keyword-page';
@@ -27,20 +30,20 @@ const readCollapsed = () => {
 const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
   const [activeId, setActiveId] = useState(DEFAULT_ITEM_ID);
   const [childIds, setChildIds] = useState({});
-  const [focusActive, setFocusActive] = useState(false);
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const focus = useFocusSession();
+  const focusActive = focus.active;
 
   const { item, child, page, webview } = resolveDestination(activeId, childIds[activeId]);
 
+  // The main process sends the window to a page: tray > Start Focus Session,
+  // or the end screen when a session's time runs out.
   useEffect(() => {
-    window.api?.getFocusState?.().then((active) => setFocusActive(Boolean(active))).catch(() => {});
-    const offState = window.api?.onFocusStateChanged?.((active) => setFocusActive(Boolean(active)));
-    window.api?.onFocusSessionResult?.((message) => {
-      const next = focusStateFromResult(message);
-      if (next !== null) setFocusActive(next);
+    const off = window.api?.onNavigate?.((pageId) => {
+      if (isNavigable(pageId)) setActiveId(pageId);
     });
     return () => {
-      if (typeof offState === 'function') offState();
+      if (typeof off === 'function') off();
     };
   }, []);
 
@@ -55,14 +58,14 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
     });
   };
 
-  const handleAction = (navItem) => {
-    if (navItem.action === 'toggle-focus-session') {
-      window.api?.toggleFocusSession?.(!focusActive);
-    }
-  };
+  // No sidebar entry is an action at the moment; kept for entries that run
+  // something instead of opening a page.
+  const handleAction = () => {};
 
   const renderPage = () => {
     switch (page) {
+      case 'focus-session':
+        return <FocusSessionPage session={focus.session} now={focus.now} loaded={focus.loaded} />;
       case 'blocking-schedule':
         return <BlockingSchedule />;
       case 'super-distracting-sites':
@@ -89,6 +92,7 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout }) {
         onSelect={(navItem) => setActiveId(navItem.id)}
         onAction={handleAction}
         focusActive={focusActive}
+        focusClock={focusActive ? formatClock(remainingMs(focus.session, focus.now)) : ''}
         collapsed={collapsed}
         onToggleCollapsed={toggleCollapsed}
         footer={

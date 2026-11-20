@@ -12,6 +12,16 @@ import "./Blocker.js"
 import { setBroadcastFunction } from './Blocker.js';
 import { focusState } from './focusState.js';
 import { mergeLocalSettings } from './localSettings.js';
+import {
+  adjustSession,
+  createSession,
+  endSession,
+  isActive as isSessionActive,
+  pauseSession,
+  remainingMs,
+  restoreSession,
+  resumeSession,
+} from './focusSessionModel.js';
 import { DEFAULT_BLOCK_SETTINGS, blockSettingsMessage, normaliseBlockSettings } from './blockSettings.js';
 import SimpleUrlGrabber from './simpleUrlGrabber.js';
 import dotenv from 'dotenv';
@@ -548,6 +558,14 @@ app.on("ready", function(){
     });
     tray = createTray(mainWindow)
 
+    // A focus session survives an app restart (and ends if its time ran out meanwhile).
+    fs.readFile(getFocusSessionPath(), 'utf8')
+      .then(data => {
+        const restored = restoreSession(JSON.parse(data), Date.now());
+        if (restored) setFocusSession(restored);
+      })
+      .catch(() => {}); // no saved session
+
     const isDev = !app.isPackaged;
 
     if (!isDev) {
@@ -664,39 +682,105 @@ ipcMain.on('quit-channel', function() {
     app.quit();
 });
 
+// ---------------------------------------------------------------------------
+// Focus session
+// The main process owns the running session (so the tray, the window and a
+// restart all agree) and its end-of-session timer. The renderer draws it
+// (src/ui/focus-session.jsx) and reports it to the Focus Bear API.
+// ---------------------------------------------------------------------------
+let focusSession = null;
+let focusSessionTimer = null;
+
+const getFocusSessionPath = () => join(app.getPath('userData'), 'focus-session.json');
+
+function showMainWindowOn(pageId) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('navigate-to', pageId);
+}
+
+function setFocusSession(next) {
+    focusSession = next || null;
+
+    if (focusSession) {
+        fs.writeFile(getFocusSessionPath(), JSON.stringify(focusSession)).catch(() => {});
+    } else {
+        fs.unlink(getFocusSessionPath()).catch(() => {});
+    }
+
+    const active = isSessionActive(focusSession);
+    if (active !== isFocusActive) {
+        isFocusActive = active;
+        focusState.setActive(active);
+        broadcastFocusState(active);
+        if (active) broadcastBlocklistUpdate(currentBlocklist);
+        console.log(active ? 'Focus session started' : 'Focus session ended');
+    }
+
+    clearTimeout(focusSessionTimer);
+    focusSessionTimer = null;
+    if (focusSession && focusSession.status === 'running') {
+        focusSessionTimer = setTimeout(() => {
+            if (!focusSession || focusSession.status !== 'running') return;
+            setFocusSession(endSession(focusSession, Date.now()));
+            showMainWindowOn('focus-session'); // the "Great job" screen
+        }, remainingMs(focusSession, Date.now()) + 50);
+    }
+
+    for (const win of [mainWindow, getTrayWindow()]) {
+        if (win && !win.isDestroyed()) win.webContents.send('focus-session-changed', focusSession);
+    }
+    return focusSession;
+}
+
+ipcMain.handle('focus-session:get', () => focusSession);
+
+ipcMain.handle('focus-session:start', (event, input) => {
+    if (isSessionActive(focusSession)) return focusSession;
+    // startTime: when the renderer already told the server the session started.
+    const startTime = Number(input && input.startTime);
+    const now = Number.isFinite(startTime) && Math.abs(Date.now() - startTime) < 60000 ? startTime : Date.now();
+    return setFocusSession(createSession({ ...(input || {}), now }));
+});
+
+ipcMain.handle('focus-session:pause', () => setFocusSession(pauseSession(focusSession, Date.now())));
+ipcMain.handle('focus-session:resume', () => setFocusSession(resumeSession(focusSession, Date.now())));
+ipcMain.handle('focus-session:adjust', (event, deltaMinutes) =>
+    setFocusSession(adjustSession(focusSession, Number(deltaMinutes) || 0, Date.now())));
+ipcMain.handle('focus-session:end', () => setFocusSession(endSession(focusSession, Date.now())));
+
+// The renderer has sent the finish to the server (or gave up); don't send it again.
+ipcMain.handle('focus-session:mark-reported', () => {
+    if (!focusSession || focusSession.status !== 'ended') return focusSession;
+    return setFocusSession({ ...focusSession, finishReported: true });
+});
+
+// The end screen was closed.
+ipcMain.handle('focus-session:clear', () => {
+    if (isSessionActive(focusSession)) return focusSession;
+    return setFocusSession(null);
+});
+
+// Tray "Start Focus Session": open the start screen (goal, length, block list)
+// instead of switching blocking on silently.
 ipcMain.on('focus-session-true', function(event) {
     if (isFocusActive) {
         event.sender.send('focus-session-result', 'Focus session already active');
         return;
     }
-
-    // Native messaging extension handles blocking
-    isFocusActive = true;
-    focusState.setActive(true);
-    broadcastFocusState(true);
-    broadcastBlocklistUpdate(currentBlocklist);
-    console.log('Focus session started (native messaging extension)');
-
-    try {
-        if (event.sender && !event.sender.isDestroyed()) {
-            event.sender.send('focus-session-result', 'Focus session started');
-        }
-    } catch (e) {
-        console.log('Could not send result to original sender (window destroyed)');
-    }
+    showMainWindowOn('focus-session');
 });
 
+// Tray "Stop Focus Session": end it and show the summary.
 ipcMain.on('focus-session-false', function(event) {
     if (!isFocusActive) {
         event.sender.send('focus-session-result', 'Focus session already inactive');
         return;
     }
-
-    // Native messaging extension handles blocking
-    isFocusActive = false;
-    focusState.setActive(false);
-    broadcastFocusState(false);
-    console.log('Focus session ended');
+    setFocusSession(endSession(focusSession, Date.now()));
+    showMainWindowOn('focus-session');
 
     try {
         if (event.sender && !event.sender.isDestroyed()) {
@@ -1034,9 +1118,8 @@ ipcMain.handle('cleanup-app-data', async function() {
   let success = true;
 
   try {
-    if (isFocusActive) {
-      isFocusActive = false;
-      focusState.setActive(false);
+    if (isFocusActive || focusSession) {
+      setFocusSession(null);
       details.push('Stopped active focus session');
     }
 

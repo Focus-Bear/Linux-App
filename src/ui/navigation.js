@@ -6,14 +6,15 @@
 //
 // Each page is either a React page (`page`) or an embedded dashboard webview
 // (`webview`, a key of webViewConfigs in src/electron/webview-handler.js).
-// `action` entries don't open a page; the shell runs them (e.g. focus session).
+// `action` entries don't open a page; the shell runs them.
 
 export const NAV_SECTIONS = [
   {
     id: 'main',
     title: 'MAIN',
     items: [
-      { id: 'focus-session', label: 'Start Focus Session', activeLabel: 'Stop Focus Session', icon: 'focus', action: 'toggle-focus-session' },
+      // Start / running / end screens (src/ui/focus-session.jsx).
+      { id: 'focus-session', label: 'Start Focus Session', activeLabel: 'Focusing', icon: 'focus', page: 'focus-session' },
     ],
   },
   {
@@ -79,9 +80,18 @@ export function resolveDestination(itemId, childId, sections = NAV_SECTIONS) {
   return { item, child, page: child.page || null, webview: child.webview || null };
 }
 
-/** Label for an item, taking a running focus session into account. */
-export function itemLabel(item, { focusActive = false } = {}) {
-  return focusActive && item.activeLabel ? item.activeLabel : item.label;
+/**
+ * Label for an item, taking a running focus session into account.
+ * `focusClock` is the time left ("24:10"), shown after the active label.
+ */
+export function itemLabel(item, { focusActive = false, focusClock = '' } = {}) {
+  if (!focusActive || !item.activeLabel) return item.label;
+  return focusClock ? `${item.activeLabel} · ${focusClock}` : item.activeLabel;
+}
+
+/** True for the ids the main process may ask the window to show ('navigate-to'). */
+export function isNavigable(id, sections = NAV_SECTIONS) {
+  return Boolean(findItem(id, sections));
 }
 
 /**
