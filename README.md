@@ -17,10 +17,47 @@ A lightweight, browser-native URL blocking application for Linux using Electron 
 ### Development
 
 ```bash
+# Node 20+ (24 matches CI). With nvm:
+nvm install 24 && nvm use 24
+
+cp .env.example .env    # Auth0 settings (see "Secrets" below)
 npm ci                  # Install dependencies
-npm run start          # Development mode (hot reload)
-npm run start:prod     # Production mode
+npm run start           # Development mode (Vite hot reload + Electron)
+npm run start:prod      # Production-mode bundle, still served by Vite
+npm run lint            # ESLint
+npm test                # Unit tests (node --test)
 ```
+
+On Ubuntu/Debian you also need the Electron runtime libraries:
+
+```bash
+sudo apt-get install -y libgtk-3-0t64 libnss3 libxss1 libxtst6 libasound2t64 \
+  libgbm1 libnotify4 libsecret-1-0 xdg-utils zip python3
+```
+
+(On Ubuntu 22.04 and older the package names have no `t64` suffix.)
+
+The first launch opens the **setup wizard**, which waits until the browser
+extension connects before you can sign in. To work on the UI without loading the
+extension into a browser, run the stand-in extension in a second terminal:
+
+```bash
+npm run dev:fake-extension            # pretends to be Firefox
+npm run dev:fake-extension -- chrome  # or chrome / chromium / brave / opera
+```
+
+Sign-in opens the Auth0 page in its own window; in dev mode it redirects back to
+`http://localhost:5173/callback`.
+
+#### Windows (WSL2 + WSLg)
+
+The app runs under WSL2 on Windows 11 and its windows show on the Windows
+desktop through WSLg. Clone the repo inside the Linux filesystem (e.g.
+`~/dev/Linux-App`, not `/mnt/c/...`) so `npm ci` stays fast, then follow the
+steps above. The system tray icon doesn't appear under WSLg (no tray host), so
+use the main window. If you launch it from a script that exits straight away,
+start it with `setsid` (e.g. `setsid npm run start &`) or WSL ends the processes
+when the script's session closes.
 
 ### Production - Install via Package Manager
 
@@ -296,6 +333,8 @@ npm run package           # Package AppImage only
 npm run package:all       # Package all formats (AppImage + deb)
 npm run package:full      # Package all formats including RPM
 npm run lint              # Run ESLint
+npm test                  # Run unit tests (node --test)
+npm run dev:fake-extension  # Stand-in browser extension for UI work
 npm run install-native-messaging  # Install native host manually
 ```
 
@@ -352,10 +391,12 @@ Auth0 credentials are stored in GitHub repository secrets:
 
 These are automatically injected during CI builds and embedded in the production bundle.
 
-For local development, create a `.env` file:
+For local development, copy `.env.example` to `.env`. It holds the same public
+values (an Auth0 SPA client uses PKCE, so there is no client secret; both values
+ship inside every packaged build anyway):
 ```env
-VITE_AUTH0_DOMAIN=dev-xxxx.us.auth0.com
-VITE_AUTH0_CLIENT_ID=your_client_id
+VITE_AUTH0_DOMAIN=dev-2hidr8ad.us.auth0.com
+VITE_AUTH0_CLIENT_ID=Ny2oZNohBlURyyKDqE5bxRDY9IXYZLCg
 ```
 
 ---

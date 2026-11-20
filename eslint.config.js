@@ -5,9 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores(['dist', 'dist-react', 'release']),
   {
-    files: ['**/*.{js,jsx}'],
+    files: ['**/*.{js,jsx,mjs,cjs}'],
     extends: [
       js.configs.recommended,
       reactHooks.configs['recommended-latest'],
@@ -24,6 +24,26 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+    },
+  },
+  // Electron main/preload, the native-messaging host, build config, dev scripts and tests run in Node.
+  {
+    files: [
+      'src/electron/**/*.{js,cjs}',
+      'src/native-messaging/**/*.js',
+      'scripts/**/*.{js,mjs}',
+      '*.config.js',
+      '**/*.test.js',
+    ],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+  // The browser extensions use the WebExtensions APIs (browser.*, chrome.*).
+  {
+    files: ['src/extension/**/*.js', 'src/extension-chrome/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.webextensions },
     },
   },
 ])
