@@ -1,32 +1,56 @@
-#bs-root{
-    padding: 0;
-    margin: 0;
-    width: 100%;
-    white-space: normal;
-    overflow: hidden;
-}
-#blockmodes-root{
-    padding: 20px;
-    white-space: normal;
-    overflow: scroll;
-    font-size: 1.5vw;
-    
-
-}
-.instant-block-wrapper{
-    margin: 20px 10px 2px 0px;
+/* Radio options as selectable cards (Blocking Schedule). Uses tokens.css. */
+.fb-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
 }
 
-#instant-block-label{
-    margin: 0 0 0 10px;
+.fb-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1.5px solid var(--fb-border);
+    border-radius: var(--fb-radius);
+    background: var(--fb-surface-raised);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
 }
 
-
-#bs-divide {
-    margin: 320px 0px 20px 0px;
-    
+.fb-option:hover {
+    background: var(--fb-surface-hover);
 }
 
-.block-mode-radio {
-    margin: 26px 4px 4px 4px;
+.fb-option--checked {
+    border-color: var(--fb-orange-strong);
+    background: var(--fb-surface-soft);
+}
+
+.fb-option--disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.fb-option--disabled:hover {
+    background: var(--fb-surface-raised);
+}
+
+.fb-option input {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin: 2px 0 0;
+    accent-color: var(--fb-orange-strong);
+}
+
+.fb-option__title {
+    display: block;
+    font-weight: 600;
+}
+
+.fb-option__desc {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--fb-text-muted);
 }
