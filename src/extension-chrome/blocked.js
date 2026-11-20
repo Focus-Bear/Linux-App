@@ -30,7 +30,11 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   const subtitleEl = document.getElementById('subtitle');
   const messageEl = document.getElementById('message');
-  if (blockType === 'regex') {
+  if (blockType === 'allow_list') {
+    if (blockValueEl) blockValueEl.textContent = 'Not on your allow list';
+    if (subtitleEl) subtitleEl.textContent = 'This site is not on your allow list';
+    if (messageEl) messageEl.textContent = 'Your block list only allows the sites you chose. Take a moment to refocus on what matters most.';
+  } else if (blockType === 'regex') {
     if (subtitleEl) subtitleEl.textContent = 'Blocked by pattern match';
     if (messageEl) messageEl.textContent = 'This URL matches a blocking rule in your configuration.';
   } else {

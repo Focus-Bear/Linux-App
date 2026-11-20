@@ -248,3 +248,19 @@
         grid-template-columns: 1fr;
     }
 }
+
+.fb-focus__link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--fb-text-orange);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.fb-focus__link:focus-visible {
+    outline: none;
+    border-radius: var(--fb-radius-sm);
+    box-shadow: var(--fb-focus-ring);
+}

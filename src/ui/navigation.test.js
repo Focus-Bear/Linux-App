@@ -105,3 +105,9 @@ test('MAIN has Start Micro Break, and the break reminder can open it (#142)', ()
   assert.equal(isNavigable('micro-break'), true);
   assert.equal(resolveDestination('settings', 'settings-breaks').page, 'settings-breaks');
 });
+
+test('Blocking has Block Lists next to Blocking Schedule (#149)', () => {
+  const blocking = allItems().find((i) => i.id === 'blocking');
+  assert.deepEqual(blocking.children.map((c) => c.label), ['Blocking Schedule', 'Block Lists', 'Super Distracting Sites', 'Keyword Blocking']);
+  assert.equal(resolveDestination('blocking', 'block-lists').page, 'block-lists');
+});
