@@ -1,0 +1,126 @@
+/*
+ * Habit player (src/ui/habit-player.jsx). The countdown and progress bar reuse
+ * the focus session's .fb-focus__clock / .fb-focus__progress.
+ */
+.fb-player {
+    max-width: 620px;
+}
+
+.fb-player__top {
+    margin-bottom: 14px;
+}
+
+.fb-player__routine {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fb-text-muted);
+}
+
+.fb-player__count {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--fb-text-muted);
+}
+
+.fb-player__icon {
+    font-size: 44px;
+    line-height: 1.1;
+    text-align: center;
+}
+
+.fb-player__name {
+    margin: 6px 0 10px;
+    font-size: 22px;
+    font-weight: 700;
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.fb-player__requirements {
+    margin: 8px 0 4px;
+    padding: 12px 14px;
+    border-radius: var(--fb-radius);
+    background: var(--fb-surface-soft);
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.fb-player__actions {
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 18px;
+}
+
+.fb-player__done-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+}
+
+.fb-player__bear {
+    width: 72px;
+    height: 72px;
+}
+
+.fb-player__progress-line {
+    margin: 0 0 16px;
+    color: var(--fb-text-muted);
+}
+
+.fb-player__next {
+    min-width: 240px;
+}
+
+.fb-player__links {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 18px;
+    margin-top: 14px;
+}
+
+.fb-player__link {
+    padding: 4px 2px;
+    border: 0;
+    background: none;
+    font: inherit;
+    font-size: 13.5px;
+    color: var(--fb-text-orange);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.fb-player__link:focus-visible {
+    outline: none;
+    border-radius: var(--fb-radius-sm);
+    box-shadow: var(--fb-focus-ring);
+}
+
+.fb-player__results {
+    list-style: none;
+    width: 100%;
+    max-width: 380px;
+    margin: 0 0 18px;
+    padding: 0;
+    text-align: left;
+}
+
+.fb-player__results li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid var(--fb-divider);
+}
+
+.fb-player__result-name {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.fb-player__error {
+    margin: 12px 0 0;
+    font-size: 13px;
+    color: var(--fb-danger);
+}

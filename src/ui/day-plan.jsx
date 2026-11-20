@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import './styles/distracting-sites.css'; // shared .fb-input
 import './styles/day-plan.css';
 import { dayPlanApi } from '../services/dayPlanApi.js';
+import { habitPlayer, reportHabit, useHabitPlayer } from '../services/habitPlayerStore.js';
+import { currentHabit } from '../services/habitPlayerModel.js';
+import HabitPlayer from './habit-player.jsx';
 import {
   buildTimeline,
   dayKey,
@@ -17,8 +20,8 @@ import {
 /**
  * MAIN > Day Plan. Today's routines and habits and meetings on a timeline,
  * with "Tasks for today" beside it, like the Windows Day Plan
- * (Habits/HabitsDayPlan.xaml). Habits are read-only here; tasks can be ticked
- * off and added.
+ * (Habits/HabitsDayPlan.xaml). A habit can be started (the habit player takes
+ * over the page), marked done or skipped; tasks can be ticked off and added.
  */
 export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
   const [data, setData] = useState(null);
@@ -29,6 +32,11 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
   const [added, setAdded] = useState([]);
   const [newTitle, setNewTitle] = useState('');
   const [taskError, setTaskError] = useState(null);
+  const [habitError, setHabitError] = useState(null);
+  const [busyHabits, setBusyHabits] = useState(() => new Set());
+  // The player covers the page while a routine is played; "‹ Day Plan" hides it.
+  const [playerOpen, setPlayerOpen] = useState(true);
+  const { player, failed, version, outcomes, outcomesDay } = useHabitPlayer();
 
   const day = dayKey(now);
 
@@ -46,9 +54,10 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
     }
   }, []);
 
+  // `version` changes each time a habit is reported, so the day's progress is read again.
   useEffect(() => {
     load();
-  }, [load, day]);
+  }, [load, day, version]);
 
   // Keep "now" fresh so finished meetings drop off and the current card moves.
   useEffect(() => {
@@ -66,10 +75,38 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
             day,
             weekday: now.getDay(),
             nowMinutes: minutesOfDay(now),
+            local: outcomesDay === day ? outcomes : null,
           })
         : [],
-    [data, day, now],
+    [data, day, now, outcomes, outcomesDay],
   );
+
+  const playHabit = (card, habitId = null) => {
+    setHabitError(null);
+    if (habitPlayer.start(card, habitId)) setPlayerOpen(true);
+  };
+
+  // Done / Skip on a row, without playing the habit. Done logs the habit's
+  // planned length, as the Windows Day Plan does.
+  const markHabit = async (habit, outcome) => {
+    if (busyHabits.has(habit.id)) return;
+    setHabitError(null);
+    setBusyHabits((prev) => new Set(prev).add(habit.id));
+    const finishMs = Date.now();
+    const timing = outcome === 'done' ? { startMs: finishMs - habit.seconds * 1000, finishMs, seconds: habit.seconds } : null;
+    try {
+      await reportHabit(habit, timing);
+    } catch {
+      habitPlayer.clearFailed();
+      setHabitError(`Couldn't save "${habit.name}". Check your connection and try again.`);
+    } finally {
+      setBusyHabits((prev) => {
+        const next = new Set(prev);
+        next.delete(habit.id);
+        return next;
+      });
+    }
+  };
 
   const tasks = useMemo(() => {
     if (!data) return [];
@@ -110,6 +147,12 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
   const left = remainingTaskSeconds(tasks);
   const openCount = tasks.filter((task) => !task.completed).length;
 
+  if (player && playerOpen) {
+    return <HabitPlayer player={player} failed={failed} onBack={() => setPlayerOpen(false)} />;
+  }
+
+  const playing = player && player.phase !== 'finished' ? currentHabit(player) : null;
+
   return (
     <div className="fb-page fb-dayplan">
       <div className="fb-row fb-row--between fb-dayplan__header">
@@ -123,6 +166,21 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
           Refresh
         </button>
       </div>
+
+      {player && (
+        <section className="fb-card fb-dayplan__playing" aria-label="Routine in progress">
+          <span className="fb-dayplan__icon" aria-hidden="true">{playing?.icon || '✅'}</span>
+          <span className="fb-dayplan__playing-text">
+            <strong>{player.routine.title}</strong>
+            {playing
+              ? ` · ${playing.name}${player.phase === 'running' ? '' : ' is next'}`
+              : ' · finished'}
+          </span>
+          <button type="button" className="fb-btn fb-btn--primary fb-btn--small" onClick={() => setPlayerOpen(true)}>
+            {playing ? 'Back to habit' : 'See summary'}
+          </button>
+        </section>
+      )}
 
       {status === 'loading' && <p className="fb-dayplan__note" role="status">Loading your day…</p>}
 
@@ -157,6 +215,11 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
                   <h2 className="fb-dayplan__card-title">{card.title}</h2>
                   {card.current && <span className="fb-pill fb-dayplan__now">Now</span>}
                   {card.habits && card.allDone && <span className="fb-pill fb-pill--ok">✅ Habits done</span>}
+                  {card.habits && !card.allDone && !player && (
+                    <button type="button" className="fb-btn fb-btn--primary fb-btn--small" onClick={() => playHabit(card)}>
+                      {card.openCount === card.habits.length ? 'Start routine now' : 'Continue routine'}
+                    </button>
+                  )}
                 </header>
 
                 {card.habits && (
@@ -171,15 +234,51 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits }) {
                         <span className="fb-dayplan__habit-name">
                           {habit.name}
                           {habit.done && <span className="fb-dayplan__sr"> (done)</span>}
-                          {habit.skipped && ' · skipped'}
+                          {habit.skipped && <span className="fb-dayplan__sr"> (skipped)</span>}
                         </span>
                         <span className="fb-dayplan__span">{formatSpan(habit.seconds)}</span>
+                        {habit.done && <span className="fb-dayplan__state fb-dayplan__state--done" aria-hidden="true">✓ Done</span>}
+                        {habit.skipped && <span className="fb-dayplan__state" aria-hidden="true">Skipped</span>}
+                        {!habit.done && !habit.skipped && (
+                          <span className="fb-dayplan__habit-actions">
+                            <button
+                              type="button"
+                              className="fb-btn fb-btn--small"
+                              onClick={() => playHabit(card, habit.id)}
+                              disabled={Boolean(player) || busyHabits.has(habit.id)}
+                              aria-label={`Start ${habit.name}`}
+                              title="Start this habit"
+                            >
+                              ▶ Start
+                            </button>
+                            <button
+                              type="button"
+                              className="fb-btn fb-btn--small"
+                              onClick={() => markHabit(habit, 'done')}
+                              disabled={busyHabits.has(habit.id) || playing?.id === habit.id}
+                              aria-label={`Mark ${habit.name} done`}
+                            >
+                              Done
+                            </button>
+                            <button
+                              type="button"
+                              className="fb-btn fb-btn--gray fb-btn--small"
+                              onClick={() => markHabit(habit, 'skipped')}
+                              disabled={busyHabits.has(habit.id) || playing?.id === habit.id}
+                              aria-label={`Skip ${habit.name} for today`}
+                            >
+                              Skip
+                            </button>
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>
                 )}
               </article>
             ))}
+
+            {habitError && <p className="fb-dayplan__error" role="alert">{habitError}</p>}
 
             {data?.failed?.includes('meetings') && (
               <p className="fb-dayplan__note">Your calendar couldn&apos;t be reached, so meetings are missing.</p>

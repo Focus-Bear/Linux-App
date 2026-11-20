@@ -4,6 +4,7 @@ import UpdateNotification from './UpdateNotification.jsx';
 import Setup from './Setup.jsx';
 import { nativeAuthService } from '../services/nativeAuth.js';
 import { auth0Sync } from '../services/sync.js';
+import { habitApi } from '../services/habitApi.js';
 
 const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
 
@@ -117,6 +118,10 @@ const App = function() {
         window.api.exportList(urlString);
       }
       window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(allStates.immediatelyBlock) });
+
+      // Register this install as one of the account's devices (once), as the
+      // Windows and Mac apps do at sign-in. Habits can't be completed without it.
+      habitApi.registerDevice().catch((error) => console.error('[Device] Could not register this device:', error));
       
       setSettingsLoaded(true);
     } catch (error) {

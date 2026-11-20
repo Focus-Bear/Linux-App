@@ -262,3 +262,34 @@ test('a new task is planned and due on the day, 10 minutes by default', () => {
 test('the header shows the day', () => {
   assert.equal(formatDay(new Date(2026, 10, 21)), 'Sat 21 Nov');
 });
+
+test('a skipped habit is not done, although the server lists it under completed too', () => {
+  const progress = { morning_routine: { completed_habit_ids: ['a', 'b'], skipped_habit_ids: ['b'] } };
+  const ids = progressIds(progress);
+  assert.deepEqual([...ids.done], ['a']);
+  assert.deepEqual([...ids.skipped], ['b']);
+});
+
+test('what was just done in this app shows before the server reports it', () => {
+  const progress = { morning_routine: { completed_habit_ids: ['a', 'b', 'c'], skipped_habit_ids: ['b', 'c'] } };
+  const ids = progressIds(progress, { c: 'done', d: 'skipped', e: 'done', a: 'skipped' });
+  assert.deepEqual([...ids.done].sort(), ['c', 'e']);
+  assert.deepEqual([...ids.skipped].sort(), ['a', 'b', 'd']);
+});
+
+test('habit rows carry what is needed to report them, and cards count what is left', () => {
+  const settings = {
+    startup_time: '07:00',
+    morning_activities: [
+      { id: 'm1', name: 'Water', duration_seconds: 60, activity_sequence_id: 'seq-m', completion_requirements: ' Glass is empty ' },
+      { id: 'm2', name: 'Stretch', duration_seconds: 300, activity_sequence_id: 'seq-m' },
+    ],
+  };
+  const [card] = buildTimeline({ settings, progress: null, events: [], day: DAY, weekday: SATURDAY, local: { m1: 'done' } });
+  assert.equal(card.habits[0].sequenceId, 'seq-m');
+  assert.equal(card.habits[0].requirements, 'Glass is empty');
+  assert.equal(card.habits[1].requirements, '');
+  assert.equal(card.habits[0].done, true);
+  assert.equal(card.openCount, 1);
+  assert.equal(card.allDone, false);
+});

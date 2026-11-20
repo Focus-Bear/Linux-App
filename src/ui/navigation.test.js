@@ -32,12 +32,17 @@ test('every webview entry points at a configured dashboard page', () => {
   for (const id of webviews) assert.ok(webViewConfigs[id], `no webViewConfigs entry for ${id}`);
 });
 
-test('the app opens on Blocking > Blocking Schedule (#48)', () => {
-  assert.equal(DEFAULT_ITEM_ID, 'blocking');
+test('the app opens on the Day Plan, as on Windows', () => {
+  assert.equal(DEFAULT_ITEM_ID, 'day-plan');
   const dest = resolveDestination(undefined, undefined);
-  assert.equal(dest.item.id, 'blocking');
-  assert.equal(dest.page, 'blocking-schedule');
+  assert.equal(dest.item.id, 'day-plan');
+  assert.equal(dest.page, 'day-plan');
   assert.equal(dest.webview, null);
+});
+
+test('Blocking still opens on its first sub-page (#48)', () => {
+  const dest = resolveDestination('blocking', undefined);
+  assert.equal(dest.page, 'blocking-schedule');
 });
 
 test('a remembered sub-page is used when it belongs to the item', () => {

@@ -68,8 +68,12 @@ export function runsOnDay(daysOfWeek, weekday) {
   });
 }
 
-/** Every habit id marked done / skipped in GET /completed-activity-sequence/routine-progress. */
-export function progressIds(progress) {
+/**
+ * Every habit id marked done / skipped in GET /completed-activity-sequence/routine-progress.
+ * `local` ({ habitId: 'done' | 'skipped' }) adds what was just done in this
+ * app, so a row changes at once instead of after the next reload.
+ */
+export function progressIds(progress, local = null) {
   const done = new Set();
   const skipped = new Set();
   const walk = (node) => {
@@ -85,6 +89,17 @@ export function progressIds(progress) {
     }
   };
   walk(progress);
+  // The server lists a skipped habit under completed_habit_ids as well.
+  for (const id of skipped) done.delete(id);
+  for (const [id, outcome] of Object.entries(local || {})) {
+    if (outcome === 'done') {
+      done.add(id);
+      skipped.delete(id);
+    } else if (outcome === 'skipped') {
+      skipped.add(id);
+      done.delete(id);
+    }
+  }
   return { done, skipped };
 }
 
@@ -103,6 +118,10 @@ function habitRows(activities, startMinutes, weekday, ids) {
       start,
       end: cursor,
       seconds,
+      // Needed to report the habit as done or skipped (habitApiCore.js).
+      sequenceId: activity.activity_sequence_id || '',
+      // "Complete after: ..." A habit with requirements has no countdown.
+      requirements: String(activity.completion_requirements || '').trim(),
       done: ids.done.has(activity.id),
       skipped: ids.skipped.has(activity.id),
     });
@@ -122,6 +141,7 @@ function routineCard(kind, title, icon, activities, startMinutes, weekday, ids) 
     end,
     habits: rows,
     allDone: rows.every((row) => row.done || row.skipped),
+    openCount: rows.filter((row) => !row.done && !row.skipped).length,
   };
 }
 
@@ -166,9 +186,9 @@ export function meetingCards(events, day) {
  * `nowMinutes` (only for today) hides meetings that have finished, as the
  * Windows Day Plan does, and marks the card that is on now.
  */
-export function buildTimeline({ settings, progress, events, day, weekday, nowMinutes = null }) {
+export function buildTimeline({ settings, progress, events, day, weekday, nowMinutes = null, local = null }) {
   const config = settings || {};
-  const ids = progressIds(progress);
+  const ids = progressIds(progress, local);
   const cards = [];
 
   const morning = routineCard(
