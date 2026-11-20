@@ -1,5 +1,18 @@
 /* Shared layout + components: app shell, sidebar, sub-navigation, cards. */
 
+/* Window: optional update banner on top, the shell fills the rest. */
+.fb-app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.fb-app > .fb-shell {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
 /* ---------- App shell: sidebar | (sub-nav) | content ---------- */
 .fb-shell {
   display: flex;
@@ -399,4 +412,18 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---------- "A new version is available" banner (UpdateNotification.jsx) ---------- */
+.fb-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 20px;
+  background: var(--fb-warning-bg);
+  border-bottom: 1px solid var(--fb-orange-strong);
+  color: var(--fb-text);
+  font-size: 14px;
 }

@@ -45,6 +45,17 @@ test('a remembered sub-page is used when it belongs to the item', () => {
   assert.equal(resolveDestination('settings', 'keyword-blocking').page, 'settings-ui');
 });
 
+test('Settings has Focus Sessions, Subscription and About next to UI, Account and Uninstall (#144)', () => {
+  const settings = allItems().find((i) => i.id === 'settings');
+  assert.deepEqual(settings.children.map((c) => c.label), ['UI', 'Focus Sessions', 'Account', 'Subscription', 'About', 'Uninstall']);
+  assert.equal(resolveDestination('settings', 'settings-focus').page, 'settings-focus');
+  assert.equal(resolveDestination('settings', 'settings-about').page, 'settings-about');
+  const subscription = resolveDestination('settings', 'settings-subscription');
+  assert.equal(subscription.webview, 'upgrade-now');
+  assert.equal(subscription.page, null);
+  assert.match(webViewConfigs['upgrade-now'].url, /\/webview\/manage-subscription$/);
+});
+
 test('webview items resolve to their webview', () => {
   const dest = resolveDestination('todo-list');
   assert.equal(dest.webview, 'todo-list');

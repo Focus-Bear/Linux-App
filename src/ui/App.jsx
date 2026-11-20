@@ -219,10 +219,10 @@ const App = function() {
   }
 
   return (
-    <>
+    <div className="fb-app">
       <UpdateNotification />
       <Preferences user={user} syncStatus={syncStatus} onForceSync={handleForceSync} onLogout={handleLogout} />
-    </>
+    </div>
   );
 };
 

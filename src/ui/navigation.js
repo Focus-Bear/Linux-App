@@ -48,7 +48,10 @@ export const NAV_SECTIONS = [
         icon: 'settings',
         children: [
           { id: 'settings-ui', label: 'UI', icon: 'ui', page: 'settings-ui' },
+          { id: 'settings-focus', label: 'Focus Sessions', icon: 'focus', page: 'settings-focus' },
           { id: 'settings-account', label: 'Account', icon: 'account', page: 'settings-account' },
+          { id: 'settings-subscription', label: 'Subscription', icon: 'motivation', webview: 'upgrade-now' },
+          { id: 'settings-about', label: 'About', icon: 'help', page: 'settings-about' },
           { id: 'settings-uninstall', label: 'Uninstall', icon: 'uninstall', page: 'settings-uninstall' },
         ],
       },

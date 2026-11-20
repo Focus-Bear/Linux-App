@@ -13,6 +13,7 @@ import { setBroadcastFunction } from './Blocker.js';
 import { focusState } from './focusState.js';
 import { mergeLocalSettings } from './localSettings.js';
 import { isTrayPage, normaliseTheme } from './trayModel.js';
+import { checkForUpdates, getLastResult, openDownloadUrl, startUpdateChecker } from './updateChecker.js';
 import {
   adjustSession,
   createSession,
@@ -559,6 +560,12 @@ app.on("ready", function(){
     });
     tray = createTray(mainWindow)
 
+    // Look for a newer release shortly after launch and every 6 hours. The
+    // renderer shows a banner (UpdateNotification.jsx) and Settings > About.
+    startUpdateChecker((result) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', result);
+    });
+
     // A focus session survives an app restart (and ends if its time ran out meanwhile).
     fs.readFile(getFocusSessionPath(), 'utf8')
       .then(data => {
@@ -658,6 +665,17 @@ app.on("ready", function(){
 });
 
 ipcMain.handle('get-extension-connected', () => [...connectedBrowsers]);
+
+// Updates and version (Settings > About, UpdateNotification.jsx). The preload
+// has exposed these since the update checker was added, but nothing handled them.
+ipcMain.handle('get-app-info', () => ({ version: app.getVersion() }));
+ipcMain.handle('get-last-update-status', () => getLastResult());
+ipcMain.handle('check-for-updates', async () => {
+  const result = await checkForUpdates();
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', result);
+  return result;
+});
+ipcMain.on('open-update-download', (event, url) => { openDownloadUrl(url); });
 
 ipcMain.handle('get-local-settings', async () => {
   try {

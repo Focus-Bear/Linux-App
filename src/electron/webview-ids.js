@@ -15,7 +15,9 @@ export const webViewConfigs = {
         url: 'https://dashboard.focusbear.io/webview/get-support'
     },
     'upgrade-now': {
-        url: 'https://dashboard.focusbear.io/manage-subscription'
+        // /webview/…, as in the Windows app (Upgrade/ManageSubscription.xaml.cs).
+        // Without it the dashboard stays on "Focus Bear is waking up...".
+        url: 'https://dashboard.focusbear.io/webview/manage-subscription'
     },
     'todo-player': {
         url: 'https://dashboard.focusbear.io/webview/todo-player'
