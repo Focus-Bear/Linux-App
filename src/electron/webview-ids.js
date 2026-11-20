@@ -34,6 +34,13 @@ export const webViewConfigs = {
     'stats': {
         url: 'https://dashboard.focusbear.io/webview/stats'
     },
+    // Habit ideas during onboarding (Windows: Onboarding/SetupHabitsWebView.xaml.cs).
+    'routine-suggestion-recommend': {
+        url: 'https://dashboard.focusbear.io/webview/routine-suggestion-revamp?add-habits-mode=recommend'
+    },
+    'routine-suggestion-import': {
+        url: 'https://dashboard.focusbear.io/webview/routine-suggestion-revamp?add-habits-mode=import'
+    },
     'survey': {
         url: 'https://dashboard.focusbear.io/webview/survey'
     },

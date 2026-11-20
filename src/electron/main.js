@@ -3,9 +3,9 @@ import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-import { app, BrowserWindow, ipcMain, screen, session } from "electron";
+import { app, BrowserWindow, ipcMain, screen, session, shell } from "electron";
 import {createTray, getTrayWindow} from "./tray-handler.js"
-import { createWebView, switchToWebView, hideAllWebViews, webViewConfigs, resizeCurrentWebView, getCurrentActiveWebViewId } from './webview-handler.js';
+import { createWebView, switchToWebView, hideAllWebViews, webViewConfigs, resizeCurrentWebView, getCurrentActiveWebViewId, resendWebViewMetadata, destroyWebView } from './webview-handler.js';
 import { exec, execFile, spawn, execSync } from 'child_process';
 import { promisify } from 'util';
 import "./Blocker.js"
@@ -651,6 +651,8 @@ app.on("ready", function(){
 
     // Prevent popups in main window
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+        // Links to the Focus Bear website (terms, privacy policy) open in the browser.
+        if (/^https:\/\/(www\.)?focusbear\.io\//.test(url)) shell.openExternal(url);
         return { action: 'deny' };
     });
 
@@ -685,7 +687,11 @@ ipcMain.handle('get-extension-connected', () => [...connectedBrowsers]);
 
 // Updates and version (Settings > About, UpdateNotification.jsx). The preload
 // has exposed these since the update checker was added, but nothing handled them.
-ipcMain.handle('get-app-info', () => ({ version: app.getVersion() }));
+ipcMain.handle('get-app-info', () => ({
+  version: app.getVersion(),
+  // Test switch: show the first-run onboarding to an account that already did it.
+  forceOnboarding: process.env.FOCUSBEAR_FORCE_ONBOARDING === '1',
+}));
 ipcMain.handle('get-last-update-status', () => getLastResult());
 ipcMain.handle('check-for-updates', async () => {
   const result = await checkForUpdates();
@@ -1160,10 +1166,27 @@ ipcMain.on('switch-webview', function(event, webViewId, metadata, rect) {
     }
 
     // Key webviews by the id the renderer asked for, so switchToWebView finds them.
-    createWebView({ ...config, id: webViewId, mainWindow, metadata });
+    createWebView({
+        ...config,
+        id: webViewId,
+        mainWindow,
+        metadata,
+        // What the page told the app (e.g. onboarding's habit ideas were installed).
+        onMessage: (id, message) => {
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('webview-message', id, message);
+        },
+    });
     rendererWebViewBounds = toWebViewBounds(rect) || rendererWebViewBounds;
     const bounds = rendererWebViewBounds || getWebviewContainerBounds();
     switchToWebView(webViewId, mainWindow, bounds);
+});
+
+ipcMain.on('resend-webview-metadata', function(event, webViewId, metadata) {
+    resendWebViewMetadata(webViewId, metadata);
+});
+
+ipcMain.on('destroy-webview', function(event, webViewId) {
+    destroyWebView(webViewId, mainWindow);
 });
 
 ipcMain.on('set-webview-bounds', function(event, rect) {

@@ -1,6 +1,7 @@
 // Enhanced webview-handler.js with optimized management
 import { WebContentsView, session } from 'electron';
 import { webViewConfigs } from './webview-ids.js';
+import { MESSAGE_SHIM, parseWebViewMessage } from './webview-messages.js';
 
 export { webViewConfigs };
 
@@ -13,7 +14,7 @@ let currentActiveWebView = null;
 const backgroundFor = (theme) => (theme === 'DARK' ? '#282828' : '#ffffff');
 
 export function createWebView(config) {
-    const { id, url, metadata } = config;
+    const { id, url, metadata, onMessage } = config;
 
     if (webViews.has(id)) {
         console.log(`[WebView Handler] Reusing existing webview: ${id}`);
@@ -81,7 +82,16 @@ export function createWebView(config) {
         });
     }
 
+    webView.webContents.on('dom-ready', () => {
+        webView.webContents.executeJavaScript(MESSAGE_SHIM).catch(() => {});
+    });
+
     webView.webContents.on('console-message', (event, level, message) => {
+        const sent = parseWebViewMessage(message);
+        if (sent !== undefined) {
+            if (typeof onMessage === 'function') onMessage(id, sent);
+            return;
+        }
         console.log(`[WebView ${id} Console]:`, message);
     });
 
@@ -229,8 +239,22 @@ function getInjectionConfigForWebView(webViewId, metadata) {
         tasks = '[]',
         total_duration = 0,
         intention = '',
-        brain_dump = ''
+        brain_dump = '',
+        long_term_goals = ['']
     } = metadata;
+
+    // Onboarding's habit ideas page (the same data the Windows app hands it).
+    const routineSuggestion = {
+        functionName: 'loadMetaDataForRoutineSuggestion',
+        data: {
+            access_token,
+            platform: 'linux',
+            lang,
+            font,
+            theme,
+            long_term_goals
+        }
+    };
 
     const configs = {
         'edit_habits': {
@@ -336,6 +360,8 @@ function getInjectionConfigForWebView(webViewId, metadata) {
                 lang
             }
         },
+        'routine-suggestion-recommend': routineSuggestion,
+        'routine-suggestion-import': routineSuggestion,
         'blocking_schedule': {
             functionName: 'loadSettingsData',
             data: {
@@ -350,6 +376,23 @@ function getInjectionConfigForWebView(webViewId, metadata) {
     };
 
     return configs[webViewId];
+}
+
+/** Hands a page its sign-in data again (it asked with 'invoke-js-function'). */
+export function resendWebViewMetadata(id, metadata) {
+    const webView = webViews.get(id);
+    if (webView && metadata) callWindowFunction(webView, id, metadata);
+}
+
+/** Forgets a page, so the next visit loads it afresh. */
+export function destroyWebView(id, mainWindow) {
+    const webView = webViews.get(id);
+    if (!webView) return;
+    if (webView === currentActiveWebView) hideAllWebViews(mainWindow);
+    try { webView.webContents.close(); } catch { /* already gone */ }
+    webViews.delete(id);
+    webViewInjectionStatus.delete(id);
+    webViewThemes.delete(id);
 }
 
 export function switchToWebView(id, mainWindow, bounds) {

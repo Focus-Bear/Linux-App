@@ -72,6 +72,14 @@ class NativeAuthService {
 
   async login() {
     try {
+      // One sign-in at a time. Two starts in a row (React StrictMode runs the
+      // start-up effect twice in development) opened two sign-in pages; the
+      // second overwrote the saved state, so finishing the first page failed
+      // with "Signing in didn't finish".
+      const startedAt = Date.now();
+      if (this.loginStartedAt && startedAt - this.loginStartedAt < 3000) return;
+      this.loginStartedAt = startedAt;
+
       console.log('[NativeAuth] Starting PKCE login flow...');
 
       const { codeVerifier, codeChallenge, codeChallengeMethod } = await generatePKCEPair();
