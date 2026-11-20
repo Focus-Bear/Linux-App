@@ -1,11 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { nativeAuthService } from '../services/nativeAuth.js';
+import {
+  addEntry,
+  fromDeviceSettings,
+  keywordsOf,
+  normaliseKeyword,
+  parseDeviceSettings,
+  removeFromView,
+  sitesOf,
+  toDeviceSettings,
+} from './blocklist.js';
 
 const SYNCED_STATES = {
   selectedBlockMode: 'manual',
   selectedBlockMethod: 'hosts',
   selectedBearMode: 'cuddly',
-  urlList: ['facebook.com', 'x.com']
+  // Sites and keywords share this list (kArrBlockedUrls); see blocklist.js.
+  urlList: ['facebook.com', 'x.com'],
+  // "Immediately block super distracting sites" (kImmediatelyBlockDistractingSites)
+  immediatelyBlock: false
 };
 
 const API_BASE_URL = 'https://api.focusbear.io';
@@ -81,27 +94,12 @@ class SimpleAuth0Sync {
 
       this.rawAPIData = data;
 
-      const macOSSettings = data.MacOS;
-      if (!macOSSettings) {
+      if (!data.MacOS) {
         console.log('[Sync] No MacOS key in response');
         return null;
       }
 
-      const parsedMacOS = typeof macOSSettings === 'string'
-        ? JSON.parse(macOSSettings)
-        : macOSSettings;
-
-      console.log('[Sync] Parsed MacOS settings:', parsedMacOS);
-
-      const mappedSettings = {};
-
-      if (parsedMacOS.kArrBlockedUrls && Array.isArray(parsedMacOS.kArrBlockedUrls)) {
-        mappedSettings.urlList = parsedMacOS.kArrBlockedUrls;
-      }
-
-      if (typeof parsedMacOS.kCuddlyModeEnabled === 'boolean') {
-        mappedSettings.selectedBearMode = parsedMacOS.kCuddlyModeEnabled ? 'cuddly' : 'grizzly';
-      }
+      const mappedSettings = fromDeviceSettings(parseDeviceSettings(data.MacOS));
 
       console.log('[Sync] Mapped settings:', mappedSettings);
       return mappedSettings;
@@ -124,24 +122,7 @@ class SimpleAuth0Sync {
 
       let baseData = this.rawAPIData || {};
 
-      const macOSSettings = baseData.MacOS;
-      let parsedMacOS = {};
-
-      if (macOSSettings) {
-        parsedMacOS = typeof macOSSettings === 'string'
-          ? JSON.parse(macOSSettings)
-          : { ...macOSSettings };
-      }
-
-      if (settings.urlList) {
-        parsedMacOS.kArrBlockedUrls = settings.urlList;
-      }
-
-      if (settings.selectedBearMode) {
-        parsedMacOS.kCuddlyModeEnabled = settings.selectedBearMode === 'cuddly';
-      }
-
-      baseData.MacOS = parsedMacOS;
+      baseData.MacOS = toDeviceSettings(parseDeviceSettings(baseData.MacOS), settings);
 
       console.log('[Sync] Saving to API:', baseData);
 
@@ -185,6 +166,9 @@ class SimpleAuth0Sync {
 
     if (key === 'urlList') {
       window.api?.exportList?.(value.join('\n'));
+    }
+    if (key === 'immediatelyBlock') {
+      window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(value) });
     }
 
     // Queue save with debouncing
@@ -249,6 +233,7 @@ class SimpleAuth0Sync {
         });
         const urlList = this.cache.get('urlList') ?? SYNCED_STATES.urlList;
         window.api?.exportList?.(urlList.join('\n'));
+        window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(this.getValue('immediatelyBlock')) });
         console.log('Force sync completed from Focus Bear API');
       }
     } catch (error) {
@@ -290,27 +275,43 @@ export const useSyncedState = (key) => {
   return [value, setSyncedValue, isLoading];
 };
 
+// Super Distracting Sites: the entries of the block list that are sites.
+// `removeUrls` takes positions in `urlArray` (what the page shows).
 export const useUrlList = () => {
-  const [urlArray, setUrlArray, isLoading] = useSyncedState('urlList');
-  
+  const [list, setList, isLoading] = useSyncedState('urlList');
+  const urlArray = sitesOf(list);
+
   const addUrl = useCallback((url) => {
-    if (url && !urlArray.includes(url)) {
-      setUrlArray([...urlArray, url]);
-    }
-  }, [urlArray, setUrlArray]);
+    setList(addEntry(list, url));
+  }, [list, setList]);
 
   const removeUrls = useCallback((indices) => {
-    const newArray = urlArray.filter((_, index) => !indices.has(index));
-    setUrlArray(newArray);
-  }, [urlArray, setUrlArray]);
+    setList(removeFromView(list, sitesOf(list), indices));
+  }, [list, setList]);
 
   return {
-    urlArray, 
-    setUrlArray,
+    urlArray,
     addUrl,
     removeUrls,
     isLoading
   };
+};
+
+// Keyword Blocking: the entries of the same list that are keywords (no dot),
+// so they are saved to the account and reach the browser extension like sites do.
+export const useKeywordList = () => {
+  const [list, setList, isLoading] = useSyncedState('urlList');
+  const keywords = keywordsOf(list);
+
+  const addKeyword = useCallback((keyword) => {
+    setList(addEntry(list, normaliseKeyword(keyword)));
+  }, [list, setList]);
+
+  const removeKeywords = useCallback((indices) => {
+    setList(removeFromView(list, keywordsOf(list), indices));
+  }, [list, setList]);
+
+  return { keywords, addKeyword, removeKeywords, isLoading };
 };
 
 export { auth0Sync };

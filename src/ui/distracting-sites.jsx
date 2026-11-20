@@ -1,23 +1,18 @@
-import { useEffect, useState } from 'react';
 import ListEditor from './list-editor.jsx';
-import { useUrlList } from '../services/sync.js';
+import { useSyncedState, useUrlList } from '../services/sync.js';
+import { siteError } from '../services/blocklist.js';
 
 const Distracting_sites_page = function () {
-  // Not wired to anything yet (it wasn't before either); see the "Immediately block" issue.
-  const [instantBlock, setInstantBlock] = useState(false);
   const { urlArray, addUrl, removeUrls, isLoading } = useUrlList();
-
-  useEffect(function () {
-    if (!isLoading && urlArray) {
-      window.api?.printList(urlArray.join('\n'));
-    }
-  }, [urlArray, isLoading]);
+  // Saved to the account as kImmediatelyBlockDistractingSites (same key as Mac
+  // and Windows). When on, the block page has no "Unblock temporarily".
+  const [immediatelyBlock, setImmediatelyBlock, isLoadingBlock] = useSyncedState('immediatelyBlock');
 
   return (
     <ListEditor
       title="Super Distracting Sites"
-      description="Which sites do you waste time on? Focus Bear will help you be more intentional about how you use them. They're blocked during focus sessions; the rest of the time Focus Bear asks why you want to open them."
-      items={isLoading ? [] : urlArray || []}
+      description="Which sites do you waste time on? Focus Bear will help you be more intentional about how you use them: when you open one, it stops you and asks whether you really want to."
+      items={isLoading ? [] : urlArray}
       emptyText={isLoading ? 'Loading your sites…' : 'No sites yet. Add one to get started.'}
       addLabel="Add URL"
       dialogTitle="Add a website"
@@ -28,13 +23,25 @@ const Distracting_sites_page = function () {
           <div>To block all its subdomains: <code>*.domain.com</code></div>
         </>
       }
+      validate={(value) => siteError(value, urlArray)}
       onAdd={addUrl}
       onRemove={removeUrls}
     >
       <label className="fb-check">
-        <input type="checkbox" checked={instantBlock} onChange={(e) => setInstantBlock(e.target.checked)} />
+        <input
+          type="checkbox"
+          checked={Boolean(immediatelyBlock)}
+          disabled={isLoadingBlock}
+          onChange={(e) => setImmediatelyBlock(e.target.checked)}
+          aria-describedby="immediately-block-help"
+        />
         <span>Immediately block super distracting sites</span>
       </label>
+      <p id="immediately-block-help" className="fb-check__help">
+        {immediatelyBlock
+          ? 'On: these sites are blocked outright. The block page has no "Unblock temporarily" button.'
+          : 'Off: the block page lets you unblock a site for a few minutes when you really need it.'}
+      </p>
     </ListEditor>
   );
 };

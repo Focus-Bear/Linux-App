@@ -72,6 +72,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.error('[Blocked Page] Error loading statistics:', error);
   }
   
+  // "Immediately block super distracting sites" (set in the Focus Bear app):
+  // no temporary unblock from this page.
+  try {
+    const { immediatelyBlock } = await browser.storage.local.get(['immediatelyBlock']);
+    if (immediatelyBlock === true) {
+      const unblockBtn = document.getElementById('openUnblock');
+      if (unblockBtn) unblockBtn.style.display = 'none';
+      if (messageEl) {
+        messageEl.textContent =
+          'You chose to block super distracting sites immediately. You can change this in Focus Bear under Blocking.';
+      }
+    }
+  } catch (error) {
+    console.error('[Blocked Page] Could not read block settings:', error);
+  }
+
   const tipTextEl = document.getElementById('tipText');
   if (tipTextEl) tipTextEl.textContent = tips[Math.floor(Math.random() * tips.length)];
   

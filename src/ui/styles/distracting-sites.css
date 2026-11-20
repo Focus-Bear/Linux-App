@@ -127,3 +127,15 @@
     gap: 10px;
     padding: 14px 20px 18px;
 }
+
+.fb-check__help {
+    margin: 6px 0 0 28px;
+    font-size: 12.5px;
+    color: var(--fb-text-muted);
+}
+
+.fb-dialog__error {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--fb-danger);
+}

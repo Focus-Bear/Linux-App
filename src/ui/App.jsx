@@ -116,6 +116,7 @@ const App = function() {
         const urlString = allStates.urlList.join('\n');
         window.api.exportList(urlString);
       }
+      window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(allStates.immediatelyBlock) });
       
       setSettingsLoaded(true);
     } catch (error) {

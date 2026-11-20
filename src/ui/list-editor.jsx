@@ -15,6 +15,7 @@ export default function ListEditor({
   dialogTitle,
   placeholder,
   help,
+  validate,
   onAdd,
   onRemove,
   children,
@@ -22,6 +23,7 @@ export default function ListEditor({
   const [selected, setSelected] = useState(() => new Set());
   const [showDialog, setShowDialog] = useState(false);
   const [input, setInput] = useState('');
+  const [error, setError] = useState(null);
 
   const toggle = (index) =>
     setSelected((prev) => {
@@ -34,11 +36,18 @@ export default function ListEditor({
   const close = () => {
     setShowDialog(false);
     setInput('');
+    setError(null);
   };
 
   const submit = () => {
     const value = input.trim();
     if (!value) return;
+    // `validate` returns a message when the value can't be added.
+    const problem = validate ? validate(value) : null;
+    if (problem) {
+      setError(problem);
+      return;
+    }
     onAdd(value);
     close();
   };
@@ -102,7 +111,12 @@ export default function ListEditor({
                 type="text"
                 className="fb-input"
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  setError(null);
+                }}
+                aria-invalid={error ? 'true' : undefined}
+                aria-describedby={error ? 'fb-dialog-error' : undefined}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') submit();
                   if (e.key === 'Escape') close();
@@ -110,6 +124,11 @@ export default function ListEditor({
                 placeholder={placeholder}
                 autoFocus
               />
+              {error && (
+                <div id="fb-dialog-error" className="fb-dialog__error" role="alert">
+                  {error}
+                </div>
+              )}
               {help && <div className="fb-dialog__help">{help}</div>}
             </div>
             <div className="fb-dialog__footer">
