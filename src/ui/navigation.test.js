@@ -15,6 +15,12 @@ test('sections follow the Windows left menu order', () => {
   assert.deepEqual(NAV_SECTIONS.map((s) => s.title), ['MAIN', 'TOOLS', 'PREFERENCES']);
 });
 
+test('Day Plan sits under MAIN, above Start Focus Session (#140)', () => {
+  const main = NAV_SECTIONS.find((s) => s.id === 'main');
+  assert.deepEqual(main.items.map((i) => i.id), ['day-plan', 'focus-session']);
+  assert.equal(resolveDestination('day-plan').page, 'day-plan');
+});
+
 test('item ids are unique', () => {
   const ids = allItems().flatMap((i) => [i.id, ...(i.children || []).map((c) => c.id)]);
   assert.equal(new Set(ids).size, ids.length);
