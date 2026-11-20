@@ -1,90 +1,75 @@
-// State management
-const trayState = {
-    habitsCompleted: false,
-    focusSessionActive: false,
-    // subscriptionActive: false
-};
+// Script of the tray popup (src/ui/tray.html). Shows the focus session held by
+// the main process and sends the user's choices back through the preload API.
+import { trayFocusView, normaliseTheme } from './trayModel.js';
 
-function updateUI() {
-    const resumeBtn = document.getElementById('resume-habits');
-    const focusBtn = document.getElementById('focus-session');
-    const subBtn = document.getElementById('subscription');
+const api = window.api;
+let session = null;
+let tick = null;
 
-    // Resume Habits Button - hide when completed
-    resumeBtn.style.display = trayState.habitsCompleted ? 'none' : 'block';
+const el = (id) => document.getElementById(id);
 
-    // Focus Session Button - change text and color
-    if (trayState.focusSessionActive) {
-        focusBtn.textContent = 'Stop Focus Session';
-        focusBtn.className = 'tray-button active';
-    } else {
-        focusBtn.textContent = 'Start Focus Session';
-        focusBtn.className = 'tray-button primary';
+function render() {
+    const view = trayFocusView(session, Date.now());
+    el('focus-card').dataset.state = view.state;
+    el('focus-title').textContent = view.title;
+    el('focus-subtitle').textContent = view.subtitle;
+    el('focus-subtitle').title = view.subtitle;
+
+    const primary = el('focus-primary');
+    primary.textContent = view.primaryLabel;
+    primary.dataset.action = view.primaryAction;
+    primary.className = `fb-btn fb-btn--block ${view.primaryAction === 'start' ? 'fb-btn--primary' : 'fb-btn--gray'}`;
+
+    const pause = el('focus-pause');
+    pause.hidden = !view.pauseLabel;
+    pause.textContent = view.pauseLabel || '';
+    pause.dataset.action = view.pauseAction || '';
+    pause.className = `fb-btn fb-btn--block ${view.pauseAction === 'resume' ? 'fb-btn--primary' : 'fb-btn--gray'}`;
+
+    // Count down only while a session runs.
+    const running = view.state === 'running';
+    if (running && !tick) tick = setInterval(render, 1000);
+    if (!running && tick) {
+        clearInterval(tick);
+        tick = null;
     }
-
-
 }
 
-// Button event handlers
-function resumeHabits() {
-    window.api?.resumeHabits?.();
-    // Update state when habits are completed
-    trayState.habitsCompleted = true;
-    updateUI();
+function setSession(next) {
+    session = next || null;
+    render();
 }
 
-function openPreferences() {
-    window.api?.showPreferences?.();
+function applyTheme(theme) {
+    document.documentElement.dataset.theme = normaliseTheme(theme);
 }
 
-function openTodoList() {
-    window.api?.openTodoList?.();
-}
-
-function toggleFocusSession() {
-    // Start opens the start screen in the main window; the button changes when
-    // the main process reports the new state (focus-state-changed).
-    window.api?.toggleFocusSession?.(!trayState.focusSessionActive);
-}
-
-function quit() {
-    window.api.showQuitDialog();
-}
-
-function upgrade() {
-    window.api?.showUpgrade?.();
-}
-
-// Event listeners
-function setupEventListeners() {
-    document.getElementById('resume-habits').addEventListener('click', resumeHabits);
-    document.getElementById('focus-session').addEventListener('click', toggleFocusSession);
-    document.getElementById('subscription').addEventListener('click', upgrade);
-}
-
-// Initialize when DOM is loaded
 function init() {
-    setupEventListeners();
-    updateUI();
-    
-    // Listen for state updates from main process
+    el('focus-primary').addEventListener('click', (event) => {
+        // Start opens the start screen in the main window; Stop ends the
+        // session and shows its summary there.
+        api?.toggleFocusSession?.(event.currentTarget.dataset.action === 'start');
+    });
 
+    el('focus-pause').addEventListener('click', (event) => {
+        const action = event.currentTarget.dataset.action;
+        if (action === 'pause') api?.focusSession?.pause?.().then(setSession);
+        if (action === 'resume') api?.focusSession?.resume?.().then(setSession);
+    });
 
-    if (window.api?.onFocusSessionResult) {
-        window.api.onFocusSessionResult((message) => {
-            console.log('Focus session result:', message);
-        });
-    }
+    document.querySelectorAll('[data-open]').forEach((button) => {
+        button.addEventListener('click', () => api?.openPage?.(button.dataset.open));
+    });
+    el('open-app').addEventListener('click', () => api?.showPreferences?.());
+    el('quit').addEventListener('click', () => api?.showQuitDialog?.());
 
-    // Add listener for state broadcasts
-    if (window.api?.onFocusStateChanged) {
-        // You'll need to add this to preload.js
-        window.api.onFocusStateChanged?.((isActive) => {
-            trayState.focusSessionActive = isActive;
-            updateUI();
-        });
-    }
+    api?.focusSession?.get?.().then(setSession).catch(() => render());
+    api?.focusSession?.onChanged?.(setSession);
+
+    api?.getTheme?.().then(applyTheme).catch(() => {});
+    api?.onThemeChanged?.(applyTheme);
+
+    render();
 }
 
-// Initialize when page loads
-window.addEventListener('DOMContentLoaded', init);
+init();

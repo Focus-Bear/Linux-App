@@ -12,6 +12,7 @@ import "./Blocker.js"
 import { setBroadcastFunction } from './Blocker.js';
 import { focusState } from './focusState.js';
 import { mergeLocalSettings } from './localSettings.js';
+import { isTrayPage, normaliseTheme } from './trayModel.js';
 import {
   adjustSession,
   createSession,
@@ -649,8 +650,7 @@ app.on("ready", function(){
 
     ipcMain.on('show-preferences', function() {
         if (mainWindow) {
-            mainWindow.setSize(1000, 850);
-            mainWindow.center();
+            if (mainWindow.isMinimized()) mainWindow.restore();
             mainWindow.show();
             mainWindow.focus();
         }
@@ -762,6 +762,21 @@ ipcMain.handle('focus-session:clear', () => {
     if (isSessionActive(focusSession)) return focusSession;
     return setFocusSession(null);
 });
+
+// Tray rows ("Day Plan", "To-do list", ...): show that page in the main window.
+ipcMain.on('tray-open-page', (event, pageId) => {
+    if (isTrayPage(pageId)) showMainWindowOn(pageId);
+});
+
+// The tray popup is a separate page and can't read the main window's theme
+// choice, so the main window reports it and the popup asks for it.
+let currentTheme = 'light';
+ipcMain.on('theme-changed', (event, theme) => {
+    currentTheme = normaliseTheme(theme);
+    const trayWindow = getTrayWindow();
+    if (trayWindow && !trayWindow.isDestroyed()) trayWindow.webContents.send('theme-changed', currentTheme);
+});
+ipcMain.handle('get-theme', () => currentTheme);
 
 // Tray "Start Focus Session": open the start screen (goal, length, block list)
 // instead of switching blocking on silently.
