@@ -88,6 +88,13 @@ function connectToApp() {
             data: message.data,
             timestamp: Date.now()
           });
+        } else if (message.type === 'BLOCK_SETTINGS_UPDATE') {
+          log('Forwarding block settings to extension');
+          sendMessage({
+            type: 'BLOCK_SETTINGS_UPDATE',
+            data: message.data,
+            timestamp: Date.now()
+          });
         } else if (message.type === 'WHITELIST_RESPONSE') {
           log(`Forwarding whitelist response to extension (${message.data.length} entries)`);
           sendMessage({

@@ -3,6 +3,8 @@ let blocklist = [];
 let whitelist = []; // { pattern, type: 'domain'|'exact', expiresAt }
 let isConnected = false;
 let isConnectedToApp = false;
+// "Immediately block super distracting sites": no temporary unblocks while on.
+let immediatelyBlock = false;
 
 const WHITELIST_DURATION_MS = 30 * 60 * 1000;
 
@@ -13,7 +15,8 @@ const BROWSER_ID = (() => {
   return 'unknown';
 })();
 
-browser.storage.local.get(['whitelist', 'blocklist']).then(result => {
+browser.storage.local.get(['whitelist', 'blocklist', 'immediatelyBlock']).then(result => {
+  immediatelyBlock = result.immediatelyBlock === true;
   whitelist = (result.whitelist || []).filter(e => e.expiresAt > Date.now());
   browser.storage.local.set({ whitelist });
   blocklist = result.blocklist || [];
@@ -31,6 +34,7 @@ function pruneWhitelist() {
 const stripProtocol = u => u.replace(/^https?:\/\//, '');
 
 function isWhitelisted(url) {
+  if (immediatelyBlock) return false;
   pruneWhitelist();
   for (const entry of whitelist) {
     if (entry.type === 'exact' && stripProtocol(url) === stripProtocol(entry.pattern)) return true;
@@ -111,6 +115,15 @@ function connectToNativeHost() {
           }).catch(() => {});
           break;
 
+        case 'BLOCK_SETTINGS_UPDATE':
+          immediatelyBlock = message.data?.immediatelyBlock === true;
+          log(`Immediately block: ${immediatelyBlock}`);
+          browser.storage.local.set({ immediatelyBlock });
+          browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
+            if (tabs[0]?.url) maybeBlockTab(tabs[0].id, tabs[0].url);
+          }).catch(() => {});
+          break;
+
         case 'WHITELIST_RESPONSE':
         case 'WHITELIST_UPDATE':
           // Incoming from Electron (authoritative source) — replace local state
@@ -176,6 +189,8 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
   } else if (message.type === 'GET_WHITELIST') {
     sendResponse({ whitelist: pruneWhitelist() });
+  } else if (message.type === 'ADD_WHITELIST' && immediatelyBlock) {
+    sendResponse({ success: false, error: 'Immediate blocking is on' });
   } else if (message.type === 'ADD_WHITELIST') {
     const durationMs = message.durationMs || WHITELIST_DURATION_MS;
     const entry = {

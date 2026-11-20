@@ -8,6 +8,11 @@ const API = {
         return ipcRenderer.send("keywords-channel", urls)
     },
 
+    // { immediatelyBlock: boolean } - forwarded to the browser extensions
+    setBlockSettings: function(settings) {
+        return ipcRenderer.send('block-settings', settings);
+    },
+
     onReply: function(callback) {
         ipcRenderer.on('reply-message', function (event, message) {
         callback(message);})

@@ -11,6 +11,8 @@ import { promisify } from 'util';
 import "./Blocker.js"
 import { setBroadcastFunction } from './Blocker.js';
 import { focusState } from './focusState.js';
+import { mergeLocalSettings } from './localSettings.js';
+import { DEFAULT_BLOCK_SETTINGS, blockSettingsMessage, normaliseBlockSettings } from './blockSettings.js';
 import SimpleUrlGrabber from './simpleUrlGrabber.js';
 import dotenv from 'dotenv';
 import { promises as fs } from 'fs';
@@ -26,6 +28,7 @@ let socketServer = null;
 const socketClients = new Map();       // socket → {browser: string|null, lastPing: number}
 let currentBlocklist = [];
 let currentWhitelist = [];
+let currentBlockSettings = { ...DEFAULT_BLOCK_SETTINGS };
 let warningWindow = null;
 const connectedBrowsers = new Set();
 const browserLastConnected = new Map();
@@ -92,6 +95,9 @@ async function startSocketServer() {
         timestamp: Date.now()
       }) + '\n');
     }
+
+    // Push blocking options ("Immediately block super distracting sites")
+    socket.write(blockSettingsMessage(currentBlockSettings));
 
     // Push whitelist so extension can restore it after reinstall
     socket.write(JSON.stringify({
@@ -215,6 +221,19 @@ function broadcastBlocklistUpdate(blocklist) {
       socket.write(message);
     } catch (error) {
       console.error('[Socket] Error broadcasting to client:', error);
+    }
+  }
+}
+
+function broadcastBlockSettings(settings) {
+  currentBlockSettings = normaliseBlockSettings(settings);
+  const message = blockSettingsMessage(currentBlockSettings);
+  console.log(`[Socket] Broadcasting block settings to ${socketClients.size} clients:`, currentBlockSettings);
+  for (const socket of socketClients.keys()) {
+    try {
+      socket.write(message);
+    } catch (error) {
+      console.error('[Socket] Error broadcasting block settings:', error);
     }
   }
 }
@@ -509,6 +528,8 @@ app.on("ready", function(){
       .then(data => {
         const s = JSON.parse(data);
         if (s.selectedBrowsers) selectedBrowsers = s.selectedBrowsers;
+        // Last known choice, so it applies before the renderer has signed in and synced.
+        if (typeof s.immediatelyBlock === 'boolean') broadcastBlockSettings(s);
         if (s.setupComplete) startPingMonitor();
       })
       .catch(() => {}); // first run — no settings file yet, skip monitor
@@ -630,6 +651,8 @@ ipcMain.handle('get-local-settings', async () => {
 });
 
 ipcMain.on('setup-complete', () => { startPingMonitor(); });
+
+ipcMain.on('block-settings', (event, settings) => { broadcastBlockSettings(settings); });
 
 ipcMain.on('extension-warning-close-browser', async () => {
   cancelExtensionWarning();
@@ -908,19 +931,17 @@ ipcMain.handle('get-settings', async () => {
 
 ipcMain.handle('save-settings', async (event, settings) => {
   try {
-    const settingsWithMeta = {
-      ...settings,
-      lastModified: new Date().toISOString(),
-      version: '1.0.0'
-    };
-
+    // Merge into the file: the setup wizard and the settings sync each save
+    // only their own keys (see localSettings.js).
+    let existing = null;
     try {
-      await saveToAuth0(settingsWithMeta);
-      console.log('Settings saved to Auth0');
-    } catch (error) {
-      console.error('Auth0 save failed, saving locally:', error.message);
-    }
+      existing = JSON.parse(await fs.readFile(getSettingsPath(), 'utf8'));
+    } catch { /* first save, or unreadable file */ }
+    const settingsWithMeta = mergeLocalSettings(existing, settings);
 
+    // The account copy is saved by the renderer (src/services/sync.js, Focus Bear
+    // API). The old 'auth0-save-settings' round trip had no listener in the
+    // renderer, so every save waited 10 s for its timeout before reaching disk.
     await saveLocalBackup(settingsWithMeta);
     applySettings(settings);
 
@@ -951,26 +972,6 @@ async function loadFromAuth0() {
   });
 }
 
-async function saveToAuth0(settings) {
-  return new Promise((resolve, reject) => {
-    mainWindow.webContents.send('auth0-save-settings', settings);
-
-    const timeout = setTimeout(() => {
-      ipcMain.removeAllListeners('auth0-save-response');
-      reject(new Error('Timeout saving to Auth0'));
-    }, 10000);
-
-    ipcMain.once('auth0-save-response', (event, result) => {
-      clearTimeout(timeout);
-      if (result.success) {
-        resolve(result.data);
-      } else {
-        reject(new Error(result.error));
-      }
-    });
-  });
-}
-
 async function saveLocalBackup(settings) {
   try {
     const settingsPath = getSettingsPath();
@@ -985,6 +986,10 @@ function applySettings(settings) {
   if (settings.urlList) {
     console.log('Blocklist updated');
     broadcastBlocklistUpdate(settings.urlList);
+  }
+
+  if (typeof settings.immediatelyBlock === 'boolean') {
+    broadcastBlockSettings(settings);
   }
 
   if (settings.selectedBrowsers) {

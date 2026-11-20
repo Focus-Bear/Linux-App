@@ -7,6 +7,8 @@ let blocklist = [];
 let whitelist = []; // { pattern, type: 'domain'|'exact', expiresAt }
 let isConnected = false;
 let isConnectedToApp = false;
+// "Immediately block super distracting sites": no temporary unblocks while on.
+let immediatelyBlock = false;
 
 const WHITELIST_DURATION_MS = 30 * 60 * 1000;
 const NATIVE_HOST = 'com.focusbear.native_host';
@@ -43,7 +45,7 @@ async function updateDNRRules() {
   let id = 1;
 
   // Allow rules for whitelist (priority 2 beats block rules at priority 1)
-  const activeWhitelist = whitelist.filter(e => e.expiresAt > Date.now());
+  const activeWhitelist = immediatelyBlock ? [] : whitelist.filter(e => e.expiresAt > Date.now());
   for (const entry of activeWhitelist) {
     let regexFilter;
     if (entry.type === 'domain') {
@@ -107,6 +109,7 @@ function pruneWhitelist() {
 }
 
 function isWhitelistedUrl(url) {
+  if (immediatelyBlock) return false;
   const active = whitelist.filter(e => e.expiresAt > Date.now());
   for (const entry of active) {
     try {
@@ -163,6 +166,15 @@ function connectToNativeHost() {
           });
           break;
 
+        case 'BLOCK_SETTINGS_UPDATE':
+          immediatelyBlock = message.data?.immediatelyBlock === true;
+          chrome.storage.local.set({ immediatelyBlock });
+          updateDNRRules();
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0]?.url) maybeBlockTab(tabs[0].id, tabs[0].url).catch(() => {});
+          });
+          break;
+
         case 'WHITELIST_RESPONSE':
         case 'WHITELIST_UPDATE':
           whitelist = (message.data || []).filter(e => e.expiresAt > Date.now());
@@ -204,7 +216,8 @@ function connectToNativeHost() {
 // ── Startup ───────────────────────────────────────────────────────────────────
 
 async function restoreState() {
-  const result = await chrome.storage.local.get(['blocklist', 'whitelist']);
+  const result = await chrome.storage.local.get(['blocklist', 'whitelist', 'immediatelyBlock']);
+  immediatelyBlock = result.immediatelyBlock === true;
   blocklist = result.blocklist || [];
   whitelist = (result.whitelist || []).filter(e => e.expiresAt > Date.now());
   await updateDNRRules();
@@ -278,6 +291,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   } else if (message.type === 'GET_WHITELIST') {
     sendResponse({ whitelist: pruneWhitelist() });
+
+  } else if (message.type === 'ADD_WHITELIST' && immediatelyBlock) {
+    sendResponse({ success: false, error: 'Immediate blocking is on' });
 
   } else if (message.type === 'ADD_WHITELIST') {
     const durationMs = message.durationMs || WHITELIST_DURATION_MS;
