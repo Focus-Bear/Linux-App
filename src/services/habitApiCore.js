@@ -25,8 +25,8 @@ export class HabitApiError extends Error {
  * is the skip dialog's "I already did it": a completion flagged with
  * metadata.skipped_did_complete, as the Windows app sends it.
  */
-export function completedBody(habit, deviceId, { startMs, finishMs, seconds, alreadyDid = false }) {
-  return {
+export function completedBody(habit, deviceId, { startMs, finishMs, seconds, alreadyDid = false, answers = [] }) {
+  const body = {
     activity_id: habit.id,
     duration_logged: Math.max(0, Math.round(Number(seconds) || 0)),
     device_id: deviceId,
@@ -35,6 +35,9 @@ export function completedBody(habit, deviceId, { startMs, finishMs, seconds, alr
     finish_time: new Date(finishMs).toISOString(),
     metadata: alreadyDid ? { skipped_did_complete: true } : {},
   };
+  // Log quantity ("How many pages did you read?"): left out when nothing was answered.
+  if (Array.isArray(answers) && answers.length > 0) body.log_quantity_answers = answers;
+  return body;
 }
 
 /** Body of POST /completed-activity/skip. */

@@ -11,6 +11,7 @@
 //
 // `fetch` and `getToken` are passed in, so this file can be tested with node --test.
 import { newTaskBody, taskStatusBody, timezoneParam } from './dayPlanModel.js';
+import { eventBody, routineBody } from './dayPlanExtras.js';
 
 export const API_BASE_URL = 'https://api.focusbear.io';
 export const CALENDAR_PLATFORMS = ['google', 'microsoft'];
@@ -28,9 +29,13 @@ export function createDayPlanApi({ fetch, getToken, baseUrl = API_BASE_URL }) {
   async function request(method, path, body) {
     const token = await getToken();
     if (!token) throw new DayPlanApiError('Not signed in', 401);
+    // No Content-Type without a body: the server answers 400 to a DELETE that
+    // announces JSON and sends none.
+    const headers = { Authorization: `Bearer ${token}` };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
     const response = await fetch(`${baseUrl}${path}`, {
       method,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     if (!response.ok) throw new DayPlanApiError(`${method} ${path} failed: ${response.status}`, response.status);
@@ -83,6 +88,16 @@ export function createDayPlanApi({ fetch, getToken, baseUrl = API_BASE_URL }) {
     return events;
   }
 
+  /** Events added in the Day Plan for `day`: one-off ones and the day's repeats of a series. */
+  async function getPlanEvents(day) {
+    const [single, series] = await Promise.all([
+      request('GET', `/day-plan/events/day/${day}`),
+      request('GET', `/day-plan/event-series/day/${day}`).catch(() => null),
+    ]);
+    const list = (result) => (Array.isArray(result?.events) ? result.events : []);
+    return [...list(single), ...list(series).map((event) => ({ ...event, is_series: true }))];
+  }
+
   /** Every unfinished task, following the paging until the last page. */
   async function getOpenTasks() {
     const tasks = [];
@@ -94,11 +109,38 @@ export function createDayPlanApi({ fetch, getToken, baseUrl = API_BASE_URL }) {
     return tasks;
   }
 
+  const sequencePath = (id) => `/completed-activity-sequence/${encodeURIComponent(id)}`;
+
   return {
     getSettings,
     getRoutineProgress,
     getEvents,
+    getPlanEvents,
     getOpenTasks,
+
+    /** Adds an event to the Day Plan; returns it as the server stored it. */
+    async addEvent(fields, day, timezone, id = crypto.randomUUID()) {
+      const result = await request('POST', '/day-plan/events', eventBody(fields, day, timezone, id));
+      return Array.isArray(result?.events) ? result.events[0] || null : null;
+    },
+
+    async deleteEvent(id) {
+      try {
+        await request('DELETE', `/day-plan/events/${encodeURIComponent(id)}`);
+      } catch (error) {
+        if (error?.status !== 404) throw error; // already deleted elsewhere
+      }
+    },
+
+    /** "Skip routine for today": the routine counts as over and its habits aren't asked for again today. */
+    skipRoutine(sequenceId) {
+      return request('POST', `${sequencePath(sequenceId)}/force-complete-current-sequence?cancel_habits_for_today=true`, routineBody());
+    },
+
+    /** Undoes skipRoutine. */
+    undoSkipRoutine(sequenceId) {
+      return request('POST', `${sequencePath(sequenceId)}/uncomplete`, routineBody());
+    },
 
     /**
      * Everything the page needs for one day. Settings are required; the other
@@ -111,13 +153,14 @@ export function createDayPlanApi({ fetch, getToken, baseUrl = API_BASE_URL }) {
           failed.push(name);
           return fallback;
         });
-      const [settings, progress, events, tasks] = await Promise.all([
+      const [settings, progress, events, planEvents, tasks] = await Promise.all([
         getSettings(),
         optional('progress', getRoutineProgress(day, offsetMinutesEast), null),
         optional('meetings', getEvents(day), []),
+        optional('events', getPlanEvents(day), []),
         optional('tasks', getOpenTasks(), []),
       ]);
-      return { settings, progress, events, tasks, failed };
+      return { day, settings, progress, events, planEvents, tasks, failed };
     },
 
     setTaskCompleted(task, completed) {

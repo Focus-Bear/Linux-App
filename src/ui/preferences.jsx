@@ -20,6 +20,7 @@ import Keywords_page from './keyword-page';
 import UninstallPage from './uninstall-page';
 import AccountPage from './account';
 import SettingsUIPage from './settings-ui.jsx';
+import { postponeStore } from '../services/postponeStore.js';
 import NotesPage from './notes.jsx';
 import StatsPage from './stats.jsx';
 import FocusMusicPage from './focus-music.jsx';
@@ -85,6 +86,24 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
     };
   }, []);
 
+  // A postponed routine: when its time comes, open the Day Plan and say so.
+  useEffect(() => {
+    const check = () => {
+      const entry = postponeStore.get();
+      if (!entry || Date.now() < entry.until) return;
+      postponeStore.clear();
+      setActiveId('day-plan');
+      window.api?.showPreferences?.();
+      try {
+        new Notification('Focus Bear', { body: `Time for your ${String(entry.title || 'routine').toLowerCase()}.` });
+      } catch {
+        // no notifications on this desktop: the window coming up is the reminder
+      }
+    };
+    const timer = setInterval(check, 15000);
+    return () => clearInterval(timer);
+  }, []);
+
   const toggleCollapsed = () => {
     setCollapsed((prev) => {
       try {
@@ -111,6 +130,7 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
         return (
           <DayPlanPage
             onOpenTodoList={() => setActiveId('todo-list')}
+            onStartFocus={() => setActiveId('focus-session')}
             onEditHabits={() => setActiveId('edit-habits')}
           />
         );

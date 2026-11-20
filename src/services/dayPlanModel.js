@@ -7,6 +7,8 @@
 // Pure functions only (no React, no fetch), covered by node --test.
 // Times of day are minutes since local midnight; dates are 'YYYY-MM-DD'.
 
+import { focusBlocks, habitQuestions, routineState } from './dayPlanExtras.js';
+
 export const DEFAULT_STARTUP = '05:15';
 export const DEFAULT_SHUTDOWN = '20:00';
 
@@ -122,6 +124,8 @@ function habitRows(activities, startMinutes, weekday, ids) {
       sequenceId: activity.activity_sequence_id || '',
       // "Complete after: ..." A habit with requirements has no countdown.
       requirements: String(activity.completion_requirements || '').trim(),
+      // Asked when the habit is done ("How many pages did you read?").
+      questions: habitQuestions(activity),
       done: ids.done.has(activity.id),
       skipped: ids.skipped.has(activity.id),
     });
@@ -170,7 +174,9 @@ export function meetingCards(events, day) {
     cards.push({
       kind: 'meeting',
       id: `meeting-${id}`,
-      title: event.summary || event.subject || 'Meeting',
+      title: event.summary || event.subject || event.title || 'Meeting',
+      // The server's id, needed to delete an event added in the Day Plan.
+      sourceId: event.id || null,
       icon: '📅',
       start,
       end: start + (endDate - startDate) / 60000,
@@ -186,7 +192,18 @@ export function meetingCards(events, day) {
  * `nowMinutes` (only for today) hides meetings that have finished, as the
  * Windows Day Plan does, and marks the card that is on now.
  */
-export function buildTimeline({ settings, progress, events, day, weekday, nowMinutes = null, local = null }) {
+export function buildTimeline({
+  settings,
+  progress,
+  events,
+  planEvents = [],
+  day,
+  weekday,
+  nowMinutes = null,
+  local = null,
+  withFocusBlocks = false,
+  breakMinutes = 0,
+}) {
   const config = settings || {};
   const ids = progressIds(progress, local);
   const cards = [];
@@ -200,7 +217,11 @@ export function buildTimeline({ settings, progress, events, day, weekday, nowMin
     weekday,
     ids,
   );
-  if (morning) cards.push(morning);
+  if (morning) {
+    // "Skip routine for today" (was_force_completed on the server).
+    Object.assign(morning, routineState(progress, 'morning'));
+    cards.push(morning);
+  }
 
   for (const routine of Array.isArray(config.custom_routines) ? config.custom_routines : []) {
     if (!routine || routine.trigger === 'ON_DEMAND') continue;
@@ -229,7 +250,20 @@ export function buildTimeline({ settings, progress, events, day, weekday, nowMin
     weekday,
     ids,
   );
-  if (evening) cards.push(evening);
+  if (evening) {
+    Object.assign(evening, routineState(progress, 'evening'));
+    cards.push(evening);
+  }
+
+  // Events added in the Day Plan (GET /day-plan/events/day/{day}). Unlike
+  // calendar meetings they stay listed once over, and can be deleted.
+  for (const own of meetingCards(planEvents, day)) {
+    if (cards.some((card) => card.kind === 'meeting' && card.id === own.id)) continue;
+    cards.push({ ...own, kind: 'event', id: own.id.replace(/^meeting-/, 'event-'), icon: '🗓️' });
+  }
+
+  // Free time between the cards becomes focus blocks, as on Windows.
+  if (withFocusBlocks) cards.push(...focusBlocks(cards, { nowMinutes, breakMinutes }));
 
   cards.sort((a, b) => a.start - b.start || a.end - b.end);
   for (const card of cards) {
@@ -262,13 +296,14 @@ export function isCompleted(task) {
  * earlier days (overdue tasks move to today, as on Windows). Unfinished first,
  * most important quadrant first.
  */
-export function tasksForDay(tasks, day) {
+export function tasksForDay(tasks, day, today = day) {
   const list = [];
   for (const task of Array.isArray(tasks) ? tasks : []) {
     if (!task || !task.id) continue;
     const when = taskDay(task);
     if (!when || when > day) continue;
-    if (when < day && isCompleted(task)) continue;
+    // Overdue tasks move to today only; another day shows just its own tasks.
+    if (when < day && (day !== today || isCompleted(task))) continue;
     list.push({
       id: task.id,
       title: task.title || 'Untitled task',

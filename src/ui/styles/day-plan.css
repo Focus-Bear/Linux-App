@@ -283,3 +283,64 @@
         position: static;
     }
 }
+
+/* ---------- Other days, focus blocks, events, routine actions (L15) ---------- */
+.fb-dayplan__nav {
+  gap: 6px;
+}
+
+.fb-dayplan__card--focus {
+  border-style: dashed;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fb-dayplan__card--focus .fb-dayplan__card-title {
+  font-weight: 500;
+  color: var(--fb-text-muted);
+}
+
+.fb-dayplan__routine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 0 2px;
+  font-size: 13px;
+}
+
+.fb-dayplan__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fb-text-orange);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.fb-dayplan__link:disabled {
+  color: var(--fb-text-disabled);
+  cursor: default;
+}
+
+.fb-dayplan__event-form {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--fb-border);
+}
+
+.fb-dayplan__event-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.fb-dayplan__event-times label {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fb-text-subtle);
+}
