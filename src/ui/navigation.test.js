@@ -4,6 +4,7 @@ import {
   allItems,
   DEFAULT_ITEM_ID,
   focusStateFromResult,
+  isNavigable,
   itemLabel,
   NAV_SECTIONS,
   resolveDestination,
@@ -44,10 +45,26 @@ test('webview items resolve to their webview', () => {
   assert.equal(dest.page, null);
 });
 
-test('focus session label flips while a session runs', () => {
+test('focus session label shows the session and its clock while one runs', () => {
   const item = allItems().find((i) => i.id === 'focus-session');
   assert.equal(itemLabel(item), 'Start Focus Session');
-  assert.equal(itemLabel(item, { focusActive: true }), 'Stop Focus Session');
+  assert.equal(itemLabel(item, { focusActive: true }), 'Focusing');
+  assert.equal(itemLabel(item, { focusActive: true, focusClock: '24:10' }), 'Focusing · 24:10');
+  assert.equal(itemLabel(item, { focusClock: '24:10' }), 'Start Focus Session');
+});
+
+test('Start Focus Session opens the focus page instead of toggling blocking (#141)', () => {
+  const dest = resolveDestination('focus-session');
+  assert.equal(dest.page, 'focus-session');
+  assert.equal(dest.webview, null);
+  assert.equal(dest.item.action, undefined);
+});
+
+test('the main process can only send the window to pages that exist', () => {
+  assert.equal(isNavigable('focus-session'), true);
+  assert.equal(isNavigable('blocking'), true);
+  assert.equal(isNavigable('nope'), false);
+  assert.equal(isNavigable(undefined), false);
 });
 
 test('focus-session-result messages map to focus state', () => {

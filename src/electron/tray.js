@@ -42,9 +42,9 @@ function openTodoList() {
 }
 
 function toggleFocusSession() {
-    trayState.focusSessionActive = !trayState.focusSessionActive;
-    window.api?.toggleFocusSession?.(trayState.focusSessionActive);
-    updateUI();
+    // Start opens the start screen in the main window; the button changes when
+    // the main process reports the new state (focus-state-changed).
+    window.api?.toggleFocusSession?.(!trayState.focusSessionActive);
 }
 
 function quit() {

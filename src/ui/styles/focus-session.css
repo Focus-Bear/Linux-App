@@ -1,0 +1,250 @@
+/*
+ * Focus session screens (start, running, end). Colours come from tokens.css,
+ * so light and dark both work; buttons are the shared .fb-btn styles.
+ */
+.fb-focus {
+    max-width: 640px;
+}
+
+.fb-focus__bear,
+.fb-focus__hero {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+.fb-focus__bear img,
+.fb-focus__hero img {
+    width: 56px;
+    height: 56px;
+    flex: none;
+}
+
+/* Speech bubble next to the bear ("Ready to focus?") */
+.fb-focus__bubble {
+    position: relative;
+    padding: 10px 16px;
+    border: 1.5px solid var(--fb-selected-border);
+    border-radius: var(--fb-radius-lg);
+    background: var(--fb-surface-soft);
+    color: var(--fb-text);
+    font-weight: 600;
+}
+
+.fb-focus__label {
+    display: block;
+    margin: 16px 0 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fb-text);
+}
+
+.fb-card > .fb-focus__label:first-child {
+    margin-top: 0;
+}
+
+.fb-focus__help {
+    margin: 6px 0 0;
+    font-size: 12.5px;
+    color: var(--fb-text-muted);
+}
+
+.fb-focus__error {
+    margin: 12px 0 0;
+    font-size: 13px;
+    color: var(--fb-danger);
+}
+
+.fb-focus__muted {
+    color: var(--fb-text-subtle);
+}
+
+.fb-focus__stepper {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.fb-focus__length {
+    width: 110px;
+    text-align: center;
+    font-family: var(--fb-font-mono);
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.fb-focus__goal {
+    resize: vertical;
+    min-height: 60px;
+    font-family: inherit;
+}
+
+.fb-focus select.fb-input {
+    appearance: auto;
+}
+
+.fb-focus__start {
+    margin-top: 20px;
+    min-height: 44px;
+    font-size: 15px;
+}
+
+/* ---------- running ---------- */
+.fb-focus__timer-card {
+    text-align: center;
+    border-color: var(--fb-orange);
+}
+
+.fb-focus__timer-card--paused {
+    border-color: var(--fb-border-strong);
+}
+
+.fb-focus__clock {
+    font-family: var(--fb-font-mono);
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 1px;
+    color: var(--fb-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.fb-focus__timer-card--paused .fb-focus__clock {
+    color: var(--fb-text-subtle);
+}
+
+.fb-focus__progress {
+    height: 10px;
+    margin: 16px 0 8px;
+    border-radius: 999px;
+    background: var(--fb-surface-soft);
+    border: 1px solid var(--fb-border);
+    overflow: hidden;
+}
+
+.fb-focus__progress-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--fb-orange);
+    transition: width 0.5s linear;
+}
+
+.fb-focus__timer-card--paused .fb-focus__progress-fill {
+    background: var(--fb-border-strong);
+}
+
+.fb-focus__progress-text {
+    font-size: 13px;
+    color: var(--fb-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.fb-focus__adjust {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.fb-focus__facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 14px;
+    margin: 0;
+}
+
+.fb-focus__facts dt {
+    font-weight: 600;
+    color: var(--fb-text-muted);
+}
+
+.fb-focus__facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.fb-focus__actions {
+    margin-top: 18px;
+}
+
+/* ---------- end ---------- */
+.fb-focus__great {
+    margin: 0 0 2px;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    color: var(--fb-text-orange);
+}
+
+.fb-focus__metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.fb-focus__metric {
+    padding: 14px 12px;
+    border: 1px solid var(--fb-border);
+    border-radius: var(--fb-radius);
+    background: var(--fb-surface-soft);
+    text-align: center;
+    min-width: 0;
+}
+
+.fb-focus__metric-value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--fb-text);
+    overflow-wrap: anywhere;
+}
+
+.fb-focus__metric-label {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--fb-text-muted);
+}
+
+.fb-focus__counter {
+    margin-top: 4px;
+    font-size: 12px;
+    text-align: right;
+    color: var(--fb-text-subtle);
+}
+
+.fb-focus__stars {
+    display: flex;
+    gap: 4px;
+}
+
+.fb-focus__star {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: var(--fb-radius-sm);
+    background: transparent;
+    color: var(--fb-border-strong);
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.fb-focus__star--on {
+    color: var(--fb-orange);
+}
+
+.fb-focus__star:hover {
+    background: var(--fb-surface-hover);
+}
+
+.fb-focus__star:focus-visible {
+    outline: none;
+    box-shadow: var(--fb-focus-ring);
+}
+
+@media (max-width: 760px) {
+    .fb-focus__metrics {
+        grid-template-columns: 1fr;
+    }
+}
