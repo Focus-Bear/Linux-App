@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self'">
+    <title>Micro break</title>
+    <link rel="stylesheet" href="styles/tokens.css">
+    <link rel="stylesheet" href="styles/buttons.css">
+    <link rel="stylesheet" href="styles/break-warning.css">
+</head>
+<body>
+    <!--
+      Break reminder, shown in the top-right corner 30 seconds before a micro
+      break, like the Windows one (Habits/BreakWarning/BreakWarning.xaml):
+      start now, skip this break, or postpone it. When the countdown ends the
+      break starts. The script is src/electron/break-warning.js.
+    -->
+    <header class="bw-header">
+        <img src="../../public/bear-icon.png" alt="" class="bw-logo">
+        <div>
+            <h1 class="bw-title" id="title">Your micro break starts in</h1>
+            <div class="bw-count" id="count" role="timer" aria-live="off">30</div>
+        </div>
+    </header>
+
+    <p class="bw-desc">
+        Micro breaks help keep your energy + alertness levels consistent throughout the day and have positive
+        impacts on your posture (no more screen headaches).
+    </p>
+
+    <button type="button" id="start" class="fb-btn fb-btn--primary fb-btn--block">Start micro break now</button>
+
+    <div class="bw-row">
+        <button type="button" id="postpone" class="fb-btn fb-btn--gray">Postpone for 30 minutes</button>
+        <label class="bw-select">
+            <span class="bw-sr">Select minutes to postpone:</span>
+            <select id="minutes" aria-label="Select minutes to postpone"></select>
+        </label>
+    </div>
+
+    <button type="button" id="skip" class="fb-btn fb-btn--gray fb-btn--block">Skip</button>
+
+    <script type="module" src="../electron/break-warning.js"></script>
+</body>
+</html>

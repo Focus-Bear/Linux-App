@@ -17,7 +17,7 @@ test('sections follow the Windows left menu order', () => {
 
 test('Day Plan sits under MAIN, above Start Focus Session (#140)', () => {
   const main = NAV_SECTIONS.find((s) => s.id === 'main');
-  assert.deepEqual(main.items.map((i) => i.id), ['day-plan', 'focus-session']);
+  assert.deepEqual(main.items.map((i) => i.id).slice(0, 2), ['day-plan', 'focus-session']);
   assert.equal(resolveDestination('day-plan').page, 'day-plan');
 });
 
@@ -52,7 +52,7 @@ test('a remembered sub-page is used when it belongs to the item', () => {
 
 test('Settings has Focus Sessions, Subscription and About next to UI, Account and Uninstall (#144)', () => {
   const settings = allItems().find((i) => i.id === 'settings');
-  assert.deepEqual(settings.children.map((c) => c.label), ['UI', 'Focus Sessions', 'Account', 'Subscription', 'About', 'Uninstall']);
+  assert.deepEqual(settings.children.map((c) => c.label), ['UI', 'Focus Sessions', 'Breaks', 'Account', 'Subscription', 'About', 'Uninstall']);
   assert.equal(resolveDestination('settings', 'settings-focus').page, 'settings-focus');
   assert.equal(resolveDestination('settings', 'settings-about').page, 'settings-about');
   const subscription = resolveDestination('settings', 'settings-subscription');
@@ -96,4 +96,12 @@ test('focus-session-result messages map to focus state', () => {
   assert.equal(focusStateFromResult('Focus session already inactive'), false);
   assert.equal(focusStateFromResult('Failed to apply blocks'), null);
   assert.equal(focusStateFromResult(undefined), null);
+});
+
+test('MAIN has Start Micro Break, and the break reminder can open it (#142)', () => {
+  const main = NAV_SECTIONS.find((section) => section.id === 'main');
+  assert.deepEqual(main.items.map((i) => i.label), ['Day Plan', 'Start Focus Session', 'Start Micro Break']);
+  assert.equal(resolveDestination('micro-break').page, 'micro-break');
+  assert.equal(isNavigable('micro-break'), true);
+  assert.equal(resolveDestination('settings', 'settings-breaks').page, 'settings-breaks');
 });

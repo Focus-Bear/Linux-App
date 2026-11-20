@@ -99,6 +99,13 @@ export function fromDeviceSettings(device = {}) {
       Number.isFinite(minutes) && minutes >= 1) {
     mapped.pomodoroMinutes = Math.min(480, Math.round(minutes));
   }
+  // Settings > Breaks (the same keys as the Windows app's Breaks page).
+  if (typeof device.kUserdefaultsBreaksEnabledFromOnboarding === 'boolean') {
+    mapped.breaksEnabled = device.kUserdefaultsBreaksEnabledFromOnboarding;
+  }
+  if (typeof device.kBreakAutoStartEnabled === 'boolean') {
+    mapped.breakAutoStart = device.kBreakAutoStartEnabled;
+  }
   return mapped;
 }
 
@@ -114,5 +121,7 @@ export function toDeviceSettings(device = {}, settings = {}) {
   if (settings.pomodoroMinutes !== undefined && Number.isFinite(minutes) && minutes >= 1) {
     next.kPomodoroDurationMinutes = String(Math.min(480, Math.round(minutes)));
   }
+  if (typeof settings.breaksEnabled === 'boolean') next.kUserdefaultsBreaksEnabledFromOnboarding = settings.breaksEnabled;
+  if (typeof settings.breakAutoStart === 'boolean') next.kBreakAutoStartEnabled = settings.breakAutoStart;
   return next;
 }

@@ -1,7 +1,7 @@
 // Sidebar navigation model. Mirrors the Windows app's left menu
 // (FocusBearMainWindow.xaml + Core/Navigation/LeftMenuRules.cs): sections
 // MAIN / TOOLS / PREFERENCES, labels from config.json "leftMenuVcInfo".
-// Entries the Linux app doesn't have yet (Habits, Micro Breaks,
+// Entries the Linux app doesn't have yet (Habits,
 // Brain Dump, Focus Music, Time Tracker, ...) are tracked as GitHub issues.
 //
 // Each page is either a React page (`page`) or an embedded dashboard webview
@@ -17,6 +17,8 @@ export const NAV_SECTIONS = [
       { id: 'day-plan', label: 'Day Plan', icon: 'dayplan', page: 'day-plan' },
       // Start / running / end screens (src/ui/focus-session.jsx).
       { id: 'focus-session', label: 'Start Focus Session', activeLabel: 'Focusing', icon: 'focus', page: 'focus-session' },
+      // The break itself: start, playing, finished (src/ui/micro-break.jsx).
+      { id: 'micro-break', label: 'Start Micro Break', icon: 'break', page: 'micro-break' },
     ],
   },
   {
@@ -49,6 +51,7 @@ export const NAV_SECTIONS = [
         children: [
           { id: 'settings-ui', label: 'UI', icon: 'ui', page: 'settings-ui' },
           { id: 'settings-focus', label: 'Focus Sessions', icon: 'focus', page: 'settings-focus' },
+          { id: 'settings-breaks', label: 'Breaks', icon: 'break', page: 'settings-breaks' },
           { id: 'settings-account', label: 'Account', icon: 'account', page: 'settings-account' },
           { id: 'settings-subscription', label: 'Subscription', icon: 'motivation', webview: 'upgrade-now' },
           { id: 'settings-about', label: 'About', icon: 'help', page: 'settings-about' },

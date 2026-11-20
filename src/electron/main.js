@@ -3,7 +3,7 @@ import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, ipcMain, screen, session } from "electron";
 import {createTray, getTrayWindow} from "./tray-handler.js"
 import { createWebView, switchToWebView, hideAllWebViews, webViewConfigs, resizeCurrentWebView, getCurrentActiveWebViewId } from './webview-handler.js';
 import { exec, execFile, spawn, execSync } from 'child_process';
@@ -25,6 +25,15 @@ import {
   resumeSession,
 } from './focusSessionModel.js';
 import { DEFAULT_BLOCK_SETTINGS, blockSettingsMessage, normaliseBlockSettings } from './blockSettings.js';
+import {
+  WARNING_SECONDS,
+  breaksActive,
+  holdReason,
+  nextBreakAt,
+  normaliseBreakConfig,
+  normalisePostpone,
+  rescheduleAt,
+} from './breakModel.js';
 import SimpleUrlGrabber from './simpleUrlGrabber.js';
 import dotenv from 'dotenv';
 import { promises as fs } from 'fs';
@@ -779,6 +788,129 @@ ipcMain.handle('focus-session:mark-reported', () => {
 ipcMain.handle('focus-session:clear', () => {
     if (isSessionActive(focusSession)) return focusSession;
     return setFocusSession(null);
+});
+
+// ---------------------------------------------------------------------------
+// Micro breaks
+// The main process owns the break timer (it keeps time while the window is
+// hidden) and the reminder window. The renderer tells it the account's break
+// settings (src/ui/useBreaks.js) and plays the break (src/ui/micro-break.jsx).
+// ---------------------------------------------------------------------------
+let breakConfig = normaliseBreakConfig({ enabled: false });
+let breakPlaying = false;      // a routine or a break is on screen
+let breakNextAt = null;        // epoch ms of the next break, null when off
+let breakTimer = null;
+let breakWarningWindow = null;
+let breakWarning = null;       // { seconds, deadline } while the reminder shows
+
+// Dev helper: FOCUSBEAR_BREAK_IN_SECONDS=20 makes every break due that many
+// seconds after the timer is set (breaks are otherwise at least 5 minutes apart).
+const breakTestSeconds = Number(process.env.FOCUSBEAR_BREAK_IN_SECONDS) || 0;
+const fullInterval = () =>
+    breakTestSeconds > 0 && breaksActive(breakConfig) ? Date.now() + breakTestSeconds * 1000 : nextBreakAt(breakConfig, Date.now());
+
+const breakState = () => ({ nextAt: breakNextAt, active: breaksActive(breakConfig) });
+
+function scheduleBreak(at) {
+    breakNextAt = at;
+    clearTimeout(breakTimer);
+    breakTimer = null;
+    if (breakNextAt) breakTimer = setTimeout(onBreakDue, Math.max(0, breakNextAt - Date.now()));
+    for (const win of [mainWindow, getTrayWindow()]) {
+        if (win && !win.isDestroyed()) win.webContents.send('breaks-changed', breakState());
+    }
+}
+
+function closeBreakWarning() {
+    breakWarning = null;
+    if (breakWarningWindow && !breakWarningWindow.isDestroyed()) breakWarningWindow.destroy();
+    breakWarningWindow = null;
+}
+
+function onBreakDue() {
+    if (!breaksActive(breakConfig)) return scheduleBreak(null);
+    const now = new Date();
+    const reason = holdReason(breakConfig, {
+        focusActive: isSessionActive(focusSession),
+        playing: breakPlaying,
+        nowMinutes: now.getHours() * 60 + now.getMinutes(),
+    });
+    if (reason) {
+        console.log(`[Breaks] Break held (${reason}); next one in ${breakConfig.minutes} min`);
+        return scheduleBreak(fullInterval());
+    }
+    showBreakWarning();
+}
+
+function showBreakWarning() {
+    closeBreakWarning();
+    scheduleBreak(null); // nothing is counting down while the reminder shows
+    breakWarning = { seconds: breakConfig.seconds, deadline: Date.now() + WARNING_SECONDS * 1000 };
+    const width = 360;
+    const height = 345;
+    const area = screen.getPrimaryDisplay().workArea;
+    breakWarningWindow = new BrowserWindow({
+        width,
+        height,
+        x: area.x + area.width - width - 16,
+        y: area.y + 16,
+        show: false,
+        frame: false,
+        alwaysOnTop: true,
+        resizable: false,
+        useContentSize: true,
+        skipTaskbar: true,
+        focusable: true,
+        webPreferences: {
+            nodeIntegration: false,
+            contextIsolation: true,
+            preload: join(app.getAppPath(), './src/electron/preload.js'),
+        },
+    });
+    breakWarningWindow.on('closed', () => { breakWarningWindow = null; });
+    breakWarningWindow.loadFile(join(app.getAppPath(), './src/ui/break-warning.html'));
+    // Shown without taking the keyboard away from what the person is typing in.
+    breakWarningWindow.webContents.once('dom-ready', () => {
+        if (breakWarningWindow && !breakWarningWindow.isDestroyed()) breakWarningWindow.showInactive();
+    });
+}
+
+function startBreak() {
+    closeBreakWarning();
+    scheduleBreak(null); // rescheduled when the break is finished or closed
+    // 'break-due' tells the page this break came from the timer (it may start by itself).
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('break-due');
+    showMainWindowOn('micro-break');
+}
+
+ipcMain.handle('breaks:configure', (event, config) => {
+    const next = normaliseBreakConfig(config);
+    breakPlaying = Boolean(config && config.playing);
+    let at = breakWarning ? null : rescheduleAt(breakConfig, next, breakNextAt, Date.now());
+    breakConfig = next;
+    if (at && at !== breakNextAt) at = fullInterval();
+    if (!breaksActive(next)) closeBreakWarning();
+    // While a break is on screen or the reminder shows, the timer stays stopped.
+    if (at !== breakNextAt && !(breakPlaying && at)) scheduleBreak(at);
+    return breakState();
+});
+
+ipcMain.handle('breaks:get', () => breakState());
+
+ipcMain.handle('breaks:finished', () => {
+    breakPlaying = false;
+    scheduleBreak(fullInterval());
+    return breakState();
+});
+
+ipcMain.handle('breaks:get-warning', () => breakWarning);
+
+ipcMain.on('breaks:warning-answer', (event, action, minutes) => {
+    if (!breakWarning) return;
+    if (action === 'start') return startBreak();
+    closeBreakWarning();
+    // Skip: a full interval. Postpone: the chosen minutes.
+    scheduleBreak(action === 'postpone' ? nextBreakAt(breakConfig, Date.now(), normalisePostpone(minutes)) : fullInterval());
 });
 
 // Tray rows ("Day Plan", "To-do list", ...): show that page in the main window.

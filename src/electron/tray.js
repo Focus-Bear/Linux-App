@@ -1,6 +1,7 @@
 // Script of the tray popup (src/ui/tray.html). Shows the focus session held by
 // the main process and sends the user's choices back through the preload API.
 import { trayFocusView, normaliseTheme } from './trayModel.js';
+import { nextBreakLabel } from './breakModel.js';
 
 const api = window.api;
 let session = null;
@@ -40,6 +41,19 @@ function setSession(next) {
     render();
 }
 
+// "Next break in 12 min" under Start Micro Break, while break reminders are running.
+let breakNextAt = null;
+function renderBreak() {
+    const text = nextBreakLabel(breakNextAt, Date.now());
+    el('break-next').textContent = text;
+    el('break-next').hidden = !text;
+}
+
+function setBreaks(state) {
+    breakNextAt = state && state.nextAt ? state.nextAt : null;
+    renderBreak();
+}
+
 function applyTheme(theme) {
     document.documentElement.dataset.theme = normaliseTheme(theme);
 }
@@ -65,6 +79,10 @@ function init() {
 
     api?.focusSession?.get?.().then(setSession).catch(() => render());
     api?.focusSession?.onChanged?.(setSession);
+
+    api?.breaks?.get?.().then(setBreaks).catch(() => {});
+    api?.breaks?.onChanged?.(setBreaks);
+    setInterval(renderBreak, 20000);
 
     api?.getTheme?.().then(applyTheme).catch(() => {});
     api?.onThemeChanged?.(applyTheme);

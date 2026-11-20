@@ -71,6 +71,13 @@ const PATHS = {
     </>
   ),
   uninstall: <path d="M4 7h16M10 11v6M14 11v6M5 7l1 13h12l1-13M9 7V4h6v3" />,
+  // a cup: time for a break
+  break: (
+    <>
+      <path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5V9Z" />
+      <path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16M8 3v2M12 3v2" />
+    </>
+  ),
   chevronDown: <path d="m6 9 6 6 6-6" />,
   collapse: <path d="m11 17-5-5 5-5M18 17l-5-5 5-5" />,
   expand: <path d="m13 17 5-5-5-5M6 17l5-5-5-5" />,

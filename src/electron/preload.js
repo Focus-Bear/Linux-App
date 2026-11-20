@@ -104,6 +104,31 @@ const API = {
         },
     },
 
+    // Micro breaks. The main process owns the break timer and the reminder
+    // window; see the "Micro breaks" section of main.js and breakModel.js.
+    breaks: {
+        // { enabled, minutes, habitCount, seconds, startup, shutdown, playing }
+        configure: function(config) { return ipcRenderer.invoke('breaks:configure', config); },
+        // { nextAt, active }
+        get: function() { return ipcRenderer.invoke('breaks:get'); },
+        // A break was taken (or closed): the next one is a full interval away.
+        finished: function() { return ipcRenderer.invoke('breaks:finished'); },
+        // Reminder window: { seconds, deadline }, and its answer ('start' | 'skip' | 'postpone', minutes).
+        getWarning: function() { return ipcRenderer.invoke('breaks:get-warning'); },
+        answerWarning: function(action, minutes) { return ipcRenderer.send('breaks:warning-answer', action, minutes); },
+        onChanged: function(callback) {
+            const listener = function(event, state) { callback(state); };
+            ipcRenderer.on('breaks-changed', listener);
+            return function() { ipcRenderer.removeListener('breaks-changed', listener); };
+        },
+        // The reminder ran out or "Start micro break now" was pressed.
+        onDue: function(callback) {
+            const listener = function() { callback(); };
+            ipcRenderer.on('break-due', listener);
+            return function() { ipcRenderer.removeListener('break-due', listener); };
+        },
+    },
+
     // Tray popup: open a page of the main window ('day-plan', 'todo-list', ...).
     openPage: function(pageId) { return ipcRenderer.send('tray-open-page', pageId); },
 
