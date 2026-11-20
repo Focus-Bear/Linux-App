@@ -1,0 +1,125 @@
+/*
+ * Focus Bear design tokens, light + dark.
+ * Values come from the Windows app's Theme/LightTheme.xaml and Theme/DarkTheme.xaml
+ * so the Linux app matches it. Use these variables instead of hard-coded colours.
+ *
+ * The theme is chosen in Settings > UI (System / Light / Dark); ThemeContext.jsx
+ * sets <html data-theme="light|dark">.
+ */
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  /* surfaces */
+  --fb-bg: #ffffff;                 /* BackgroundColor */
+  --fb-surface: #faf9f6;            /* PrefenenceTitleBackgroundColor (page canvas) */
+  --fb-surface-raised: #ffffff;     /* cards */
+  --fb-surface-soft: #fff7eb;       /* SoftCreamColor */
+  --fb-surface-hover: #fff4e8;      /* TrayCardHoverBg */
+  --fb-sidebar-bg: #ffffff;
+  --fb-input-bg: #ffffff;           /* TextBoxBackgroundColor */
+  --fb-overlay: rgba(0, 0, 0, 0.45);
+
+  /* lines */
+  --fb-border: #ececec;             /* TrayCardBorder */
+  --fb-border-strong: #bfbfbf;      /* SecondaryGrayButtonBorder */
+  --fb-divider: #e6e2da;
+
+  /* text */
+  --fb-text: #1c1c1e;
+  --fb-text-muted: #525252;         /* CardSubtitleColor */
+  --fb-text-subtle: #6b6b6b;        /* TraySubtitleColor */
+  --fb-text-disabled: #a3a3a3;
+  --fb-text-orange: #a85600;        /* OrangeTextColor (AA on white) */
+  --fb-on-orange: #1c1c1e;          /* OnOrangeText */
+
+  /* brand */
+  --fb-orange: #ff9500;             /* RoutineCardActiveBorder */
+  --fb-orange-strong: #e88800;      /* PrimaryButtonBorder */
+  --fb-icon: #e88800;
+
+  /* buttons */
+  --fb-btn-primary-bg: #ffe4c6;
+  --fb-btn-primary-bg-hover: #ffdcb3;
+  --fb-btn-primary-fg: #000000;
+  --fb-btn-primary-border: #e88800;
+  --fb-btn-secondary-bg: #ffffff;
+  --fb-btn-secondary-bg-hover: #ffe4c6;
+  --fb-btn-secondary-fg: #000000;
+  --fb-btn-secondary-border: #e88800;
+  --fb-btn-gray-border: #bfbfbf;
+
+  /* selection (sidebar / sub-navigation) */
+  --fb-selected-bg: #ffe4c6;
+  --fb-selected-fg: #1c1c1e;
+  --fb-selected-border: #e88800;
+
+  /* status */
+  --fb-success: #2e7d32;
+  --fb-success-bg: #e8f5e9;
+  --fb-danger: #c62828;
+  --fb-danger-bg: #fdecea;
+  --fb-warning-bg: #fff4e5;
+
+  --fb-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.05);
+  --fb-focus-ring: 0 0 0 3px rgba(232, 136, 0, 0.35);
+
+  /* shape + type */
+  --fb-radius-sm: 6px;
+  --fb-radius: 8px;
+  --fb-radius-lg: 12px;
+  --fb-font: 'Segoe UI', system-ui, Ubuntu, Cantarell, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --fb-font-mono: ui-monospace, 'SF Mono', 'Ubuntu Mono', 'DejaVu Sans Mono', monospace;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --fb-bg: #282828;
+  --fb-surface: #282828;
+  --fb-surface-raised: #2e2e30;     /* TrayCardBg */
+  --fb-surface-soft: #3d3d3d;       /* SoftCreamColor (dark) */
+  --fb-surface-hover: #38322b;      /* TrayCardHoverBg */
+  --fb-sidebar-bg: #282828;
+  --fb-input-bg: #333333;
+  --fb-overlay: rgba(0, 0, 0, 0.6);
+
+  --fb-border: #3c3c3e;
+  --fb-border-strong: #6e6e72;
+  --fb-divider: #3c3c3e;
+
+  --fb-text: #f2f2f3;
+  --fb-text-muted: #b8b8bf;
+  --fb-text-subtle: #a0a0a6;
+  --fb-text-disabled: #6e6e72;
+  --fb-text-orange: #f09a3e;
+  --fb-on-orange: #1c1c1e;
+
+  --fb-orange: #ff9f0a;
+  --fb-orange-strong: #e88800;
+  --fb-icon: #f09a3e;
+
+  --fb-btn-primary-bg: #e9912c;
+  --fb-btn-primary-bg-hover: #f2a24e;
+  --fb-btn-primary-fg: #1c1c1e;
+  --fb-btn-primary-border: #e88800;
+  --fb-btn-secondary-bg: #3a3a3c;
+  --fb-btn-secondary-bg-hover: #4a3b28;
+  --fb-btn-secondary-fg: #f2f2f3;
+  --fb-btn-secondary-border: #e88800;
+  --fb-btn-gray-border: #6e6e72;
+
+  /* The Windows dark sidebar keeps a cream pill with dark text for the selected entry. */
+  --fb-selected-bg: #fde3c4;
+  --fb-selected-fg: #1c1c1e;
+  --fb-selected-border: #e88800;
+
+  --fb-success: #81c784;
+  --fb-success-bg: #1f3322;
+  --fb-danger: #ef9a9a;
+  --fb-danger-bg: #3b2222;
+  --fb-warning-bg: #3c332a;
+
+  --fb-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --fb-focus-ring: 0 0 0 3px rgba(240, 154, 62, 0.45);
+}

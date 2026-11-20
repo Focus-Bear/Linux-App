@@ -5,6 +5,8 @@ import Setup from './Setup.jsx';
 import { nativeAuthService } from '../services/nativeAuth.js';
 import { auth0Sync } from '../services/sync.js';
 
+const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
+
 const App = function() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -151,10 +153,9 @@ const App = function() {
       setSyncStatus('syncing');
       await auth0Sync.forceSync();
       setSyncStatus('synced');
-      alert('Settings synced successfully from cloud!');
     } catch (error) {
+      console.error('Force sync failed:', error);
       setSyncStatus('error');
-      alert('Sync failed. Please check your connection and try again.');
     }
   };
 
@@ -173,22 +174,14 @@ const App = function() {
   // Loading state - checking authentication or settings
   if (isLoading || (user && !settingsLoaded)) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '18px', marginBottom: '10px' }}>Focus Bear</div>
-          <div style={{ fontSize: '14px', color: '#666' }}>
-            {isLoading ? 'Checking authentication...' : 'Loading settings from cloud...'}
-          </div>
-          {syncStatus === 'loading' && (
-            <div style={{ fontSize: '12px', color: '#999', marginTop: '5px' }}>
-              Syncing with Auth0...
-            </div>
-          )}
+      <div className="fb-center-screen">
+        <div className="fb-center-card" role="status">
+          <img src={LOGO} alt="" />
+          <h1 className="fb-page__title" style={{ marginTop: 12 }}>Focus Bear</h1>
+          <p className="fb-page__subtitle" style={{ marginBottom: 0 }}>
+            {isLoading ? 'Checking your sign-in…' : 'Loading your settings…'}
+          </p>
+          <div className="fb-spinner" />
         </div>
       </div>
     );
@@ -197,148 +190,38 @@ const App = function() {
   // Not authenticated - auto-login in progress or failed
   if (!user) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: 'column',
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh',
-        padding: '20px'
-      }}>
-        <div style={{
-          textAlign: 'center',
-          maxWidth: '400px',
-          padding: '40px',
-          backgroundColor: '#f8f9fa',
-          borderRadius: '10px',
-          border: '1px solid #e9ecef'
-        }}>
-          <h1 style={{ marginBottom: '20px' }}>Focus Bear</h1>
-          
+      <div className="fb-center-screen">
+        <div className="fb-center-card fb-card">
+          <img src={LOGO} alt="" />
+          <h1 className="fb-page__title" style={{ marginTop: 12 }}>Welcome to Focus Bear</h1>
           {isAuthenticating ? (
-            <div>
-              <p style={{ marginBottom: '30px', color: '#666' }}>
-                Redirecting to authentication...
-              </p>
-              <div style={{ 
-                padding: '12px 30px',
-                backgroundColor: '#6c757d',
-                color: 'white',
-                borderRadius: '5px',
-                fontSize: '16px'
-              }}>
-                Please wait...
-              </div>
-            </div>
+            <>
+              <p className="fb-page__subtitle">Finish signing in in the window that just opened.</p>
+              <div className="fb-spinner" role="status" aria-label="Waiting for sign-in" />
+            </>
           ) : (
-            <div>
-              <p style={{ marginBottom: '20px', color: '#666' }}>
-                Sign in to access your settings and sync across devices
+            <>
+              <p className="fb-page__subtitle">
+                Sign in to sync your blocked sites and settings across devices.
               </p>
-              <p style={{ marginBottom: '30px', color: '#888', fontSize: '14px' }}>
-                Authentication failed or was cancelled. Try again:
-              </p>
-              <button 
-                onClick={handleManualLogin}
-                style={{
-                  padding: '12px 30px',
-                  backgroundColor: '#007bff',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '5px',
-                  cursor: 'pointer',
-                  fontSize: '16px'
-                }}
-              >
-                Sign in with Auth0
+              <button type="button" className="fb-btn fb-btn--primary fb-btn--block" onClick={handleManualLogin}>
+                Sign in
               </button>
-            </div>
+              <p className="fb-card__desc" style={{ marginTop: 12, marginBottom: 0 }}>
+                Signing in didn&apos;t finish or was cancelled. Try again.
+              </p>
+            </>
           )}
         </div>
       </div>
     );
   }
 
-  // Get sync status display
-  const getSyncStatusDisplay = () => {
-    switch (syncStatus) {
-      case 'loading':
-      case 'syncing':
-        return { text: '☁️ Syncing...', color: '#007bff' };
-      case 'synced':
-        return { text: '☁️ Cloud synced', color: '#28a745' };
-      case 'error':
-        return { text: '☁️ Sync error', color: '#dc3545' };
-      default:
-        return { text: '☁️ Local only', color: '#6c757d' };
-    }
-  };
-
-  const statusDisplay = getSyncStatusDisplay();
-
-  // Authenticated - show main app with preferences
   return (
-    <div>
+    <>
       <UpdateNotification />
-      {/* Auth status bar with cloud sync status */}
-      <div style={{
-        padding: '10px 20px',
-        backgroundColor: '#e8f5e8',
-        borderBottom: '1px solid #c3e6c3',
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center'
-      }}>
-        <span style={{ fontSize: '14px' }}>
-          Signed in as: <strong>{user.email || user.name}</strong>
-          <span style={{ 
-            marginLeft: '15px', 
-            color: statusDisplay.color, 
-            fontSize: '12px' 
-          }}>
-            {statusDisplay.text}
-          </span>
-        </span>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          {/* Force sync button */}
-          <button 
-            onClick={handleForceSync}
-            disabled={syncStatus === 'syncing' || syncStatus === 'loading'}
-            style={{
-              padding: '4px 8px',
-              backgroundColor: syncStatus === 'syncing' ? '#6c757d' : '#17a2b8',
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: (syncStatus === 'syncing' || syncStatus === 'loading') ? 'not-allowed' : 'pointer',
-              fontSize: '11px',
-              opacity: (syncStatus === 'syncing' || syncStatus === 'loading') ? 0.6 : 1
-            }}
-            title="Force sync all settings from cloud"
-          >
-            {syncStatus === 'syncing' ? 'Syncing...' : 'Sync'}
-          </button>
-          
-          <button 
-            onClick={handleLogout}
-            style={{
-              padding: '4px 12px',
-              backgroundColor: '#dc3545',
-              color: 'white',
-              border: 'none',
-              borderRadius: '3px',
-              cursor: 'pointer',
-              fontSize: '12px'
-            }}
-          >
-            Sign out
-          </button>
-        </div>
-      </div>
-      
-      {/* Main app content - directly show preferences */}
-      <Preferences user={user} />
-    </div>
+      <Preferences user={user} syncStatus={syncStatus} onForceSync={handleForceSync} onLogout={handleLogout} />
+    </>
   );
 };
 
