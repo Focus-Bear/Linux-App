@@ -1,6 +1,6 @@
 // What the tray popup shows for the current focus session. Pure, so it is
 // unit tested and shared by the popup script (src/electron/tray.js).
-import { formatClock, isActive, remainingMs } from './focusSessionModel.js';
+import { canPause, elapsedMs, formatClock, isActive, remainingMs } from './focusSessionModel.js';
 
 /** 'HH:mm' in local time. */
 export function clockTime(ms) {
@@ -26,8 +26,24 @@ export function trayFocusView(session, now) {
     };
   }
 
-  const left = formatClock(remainingMs(session, now));
   const goal = session.intention ? ` · ${session.intention}` : '';
+
+  // An untimed session has no end to count down to.
+  if (session.untimed) {
+    const paused = session.status === 'paused';
+    const soFar = formatClock(Math.floor(elapsedMs(session, now) / 1000) * 1000);
+    return {
+      state: paused ? 'paused' : 'running',
+      title: paused ? 'Focus session paused' : `Focusing · ${soFar}`,
+      subtitle: `${paused ? `${soFar} so far` : 'no end time'}${goal}`,
+      primaryLabel: 'Stop Focus Session',
+      primaryAction: 'stop',
+      pauseLabel: !canPause(session) ? null : paused ? 'Resume Focus Session' : 'Pause Focus Session',
+      pauseAction: !canPause(session) ? null : paused ? 'resume' : 'pause',
+    };
+  }
+
+  const left = formatClock(remainingMs(session, now));
 
   if (session.status === 'paused') {
     return {
@@ -47,8 +63,9 @@ export function trayFocusView(session, now) {
     subtitle: `ends at ${clockTime(session.finishTime)}${goal}`,
     primaryLabel: 'Stop Focus Session',
     primaryAction: 'stop',
-    pauseLabel: 'Pause Focus Session',
-    pauseAction: 'pause',
+    // A Pawfessor session can't be paused.
+    pauseLabel: canPause(session) ? 'Pause Focus Session' : null,
+    pauseAction: canPause(session) ? 'pause' : null,
   };
 }
 

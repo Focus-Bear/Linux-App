@@ -18,6 +18,64 @@ export const MAX_ACHIEVEMENT_CHARS = 120; // the end screen's counter
 /** Name of the block list every account has (config.json focusPreferencesInfo.defaultFocusText). */
 export const DEFAULT_MODE_NAME = 'Block super distracting sites/apps';
 
+/** An untimed session is a 12-hour one whose clock counts up (Core/Focus/FocusStartModel.cs UntimedSessionMinutes). */
+export const UNTIMED_MINUTES = 720;
+
+/**
+ * How hard a session is to stop (Core/Focus/FocusSessionStrictness.cs). The
+ * level is sent to the server as block_level and kept with the session.
+ */
+export const STRICTNESS_LEVELS = [
+  { id: 'junior', label: 'Junior', hint: 'Stop any time', blockLevel: 'gentle' },
+  { id: 'captain', label: 'Captain', hint: '15 sec delay', blockLevel: 'strict' },
+  { id: 'pawfessor', label: 'Pawfessor', hint: 'No stopping', blockLevel: 'super-strict' },
+];
+export const STOP_DELAY_SECONDS = 15;
+export const STOP_CODE_LENGTH = 12;
+
+export function strictnessLevel(id) {
+  return STRICTNESS_LEVELS.find((level) => level.id === id) || null;
+}
+
+/** The level to preselect: the one picked last time, else Junior for Cuddly mode and Pawfessor for Grizzly. */
+export function defaultStrictness(last, bearMode) {
+  if (strictnessLevel(last)) return last;
+  return bearMode === 'grizzly' ? 'pawfessor' : 'junior';
+}
+
+/** Pawfessor sessions can't be paused. */
+export function canPause(session) {
+  return Boolean(session) && session.strictness !== 'pawfessor';
+}
+
+/** Seconds to wait before a stop or pause goes through (Captain). */
+export function stopDelaySeconds(session) {
+  return session && session.strictness === 'captain' ? STOP_DELAY_SECONDS : 0;
+}
+
+/** Pawfessor: stopping needs the random characters typed in. */
+export function needsStopCode(session) {
+  return Boolean(session) && session.strictness === 'pawfessor';
+}
+
+/** True when stopping takes more than a click, so the tray sends the person to the session screen. */
+export function hasStopFriction(session) {
+  return stopDelaySeconds(session) > 0 || needsStopCode(session);
+}
+
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+/** Random characters to type before a Pawfessor session stops. `random` returns 0..1. */
+export function makeStopCode(random = Math.random, length = STOP_CODE_LENGTH) {
+  let code = '';
+  for (let i = 0; i < length; i += 1) code += CODE_ALPHABET[Math.floor(random() * CODE_ALPHABET.length) % CODE_ALPHABET.length];
+  return code;
+}
+
+export function stopCodeMatches(code, typed) {
+  return Boolean(code) && String(typed ?? '').trim() === code;
+}
+
 const MINUTE = 60 * 1000;
 
 /** A whole number of minutes between 1 and 480; anything unusable becomes 25. */
@@ -45,9 +103,23 @@ export function defaultMinutes(deviceSettings) {
 }
 
 /** A new running session. `synced` says whether the server accepted the start. */
-export function createSession({ modeId = null, modeName = '', intention = '', minutes, now, synced = false }) {
-  const length = clampMinutes(minutes);
+export function createSession({
+  modeId = null,
+  modeName = '',
+  intention = '',
+  minutes,
+  now,
+  synced = false,
+  untimed = false,
+  strictness = null,
+  tasks = [],
+}) {
+  const length = untimed ? UNTIMED_MINUTES : clampMinutes(minutes);
   return {
+    untimed: Boolean(untimed),
+    strictness: strictnessLevel(strictness) ? strictness : null,
+    // The task queue (see sessionQueue); the first unfinished row is the current task.
+    tasks: Array.isArray(tasks) ? tasks : [],
     status: 'running',
     modeId,
     modeName: String(modeName || ''),
@@ -103,6 +175,7 @@ export function isDue(session, now) {
 
 export function pauseSession(session, now) {
   if (!session || session.status !== 'running') return session;
+  if (!canPause(session)) return session;
   return { ...session, status: 'paused', pausedAt: now };
 }
 
@@ -125,6 +198,7 @@ export function resumeSession(session, now) {
  */
 export function adjustSession(session, deltaMinutes, now) {
   if (!isActive(session)) return session;
+  if (session.untimed) return session;
   const reference = session.status === 'paused' && session.pausedAt != null ? session.pausedAt : now;
   const earliest = reference + MINUTE;
   const latest = session.startTime + session.pausedTotalMs + MAX_MINUTES * MINUTE;
@@ -230,6 +304,94 @@ export function formatRange(startMs, endMs, locale = 'en-US', timeZone) {
 }
 
 /** Title of the end screen: the goal, else the block list, else "Focus session". */
+/** The clock of the running screen: time left, or time focused so far for an untimed session. */
+export function clockMs(session, now) {
+  return session && session.untimed ? elapsedMs(session, now) : remainingMs(session, now);
+}
+
+// --- task queue -------------------------------------------------------------
+
+export const MAX_QUEUE = 20;
+const DEFAULT_TASK_SECONDS = 25 * 60;
+
+/**
+ * The session's task queue from the chosen to-dos, in the order chosen
+ * (Core/Focus/FocusStartModel.cs SessionQueue). The first row is the one
+ * being worked on.
+ */
+export function sessionQueue(tasks) {
+  const seen = new Set();
+  const rows = [];
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    if (!task || !task.id || seen.has(task.id)) continue;
+    seen.add(task.id);
+    const seconds = Number(task.duration);
+    rows.push({
+      id: task.id,
+      title: String(task.title || 'Untitled task'),
+      status: task.status === 'COMPLETED' ? 'COMPLETED' : task.status || 'NOT_STARTED',
+      duration: Number.isFinite(seconds) && seconds > 0 ? seconds : DEFAULT_TASK_SECONDS,
+      details: task.details || '',
+      isPlaying: false,
+      icon: task.icon || '',
+      project_id: task.project_id ?? null,
+      project_name: task.project_name ?? task.project?.name ?? null,
+      top_score: Number(task.top_score) || 0,
+      due_date: task.due_date ?? null,
+      eisenhower_quadrant: Number(task.eisenhower_quadrant) || 1,
+    });
+    if (rows.length === MAX_QUEUE) break;
+  }
+  return markPlaying(rows);
+}
+
+function markPlaying(rows) {
+  const current = rows.find((row) => row.isPlaying && row.status !== 'COMPLETED') || rows.find((row) => row.status !== 'COMPLETED');
+  return rows.map((row) => ({ ...row, isPlaying: Boolean(current) && row.id === current.id }));
+}
+
+/** The task being worked on: the row flagged isPlaying, else the first unfinished one. */
+export function activeTask(queue) {
+  const rows = Array.isArray(queue) ? queue : [];
+  return rows.find((row) => row.isPlaying && row.status !== 'COMPLETED') || rows.find((row) => row.status !== 'COMPLETED') || null;
+}
+
+/** The queue after a task was finished: it is marked COMPLETED and the next unfinished row becomes current. */
+export function completeTask(queue, id) {
+  const rows = (Array.isArray(queue) ? queue : []).map((row) =>
+    row.id === id ? { ...row, status: 'COMPLETED', isPlaying: false } : { ...row, isPlaying: false },
+  );
+  return markPlaying(rows);
+}
+
+/** The queue with another unfinished task made the current one. */
+export function playTask(queue, id) {
+  const rows = Array.isArray(queue) ? queue : [];
+  if (!rows.some((row) => row.id === id && row.status !== 'COMPLETED')) return rows;
+  return rows.map((row) => ({ ...row, isPlaying: row.id === id }));
+}
+
+export function doneTasks(queue) {
+  return (Array.isArray(queue) ? queue : []).filter((row) => row.status === 'COMPLETED');
+}
+
+/** Body of PUT /to-do that marks a queue row done. */
+export function taskDoneBody(row) {
+  return { id: row.id, title: row.title, eisenhower_quadrant: row.eisenhower_quadrant || 1, status: 'COMPLETED' };
+}
+
+/** Candidate tasks for the start screen: in-progress first, then not started, without duplicates or finished ones. */
+export function candidateTasks(inProgress, notStarted) {
+  const seen = new Set();
+  const out = [];
+  for (const task of [...(Array.isArray(inProgress) ? inProgress : []), ...(Array.isArray(notStarted) ? notStarted : [])]) {
+    if (!task || !task.id || seen.has(task.id) || task.status === 'COMPLETED') continue;
+    seen.add(task.id);
+    out.push(task);
+  }
+  return out;
+}
+
 export function sessionTitle(session) {
   return (session && (session.intention || session.modeName)) || 'Focus session';
 }
@@ -283,12 +445,15 @@ export function defaultModeBody(id) {
 
 /** Body of POST /focus-mode/{id}/start. */
 export function startBody(session) {
-  return {
+  const body = {
     intention: session.intention || '',
     finish_time: iso(session.finishTime),
     start_time: iso(session.startTime),
-    to_dos: [],
+    to_dos: Array.isArray(session.tasks) ? session.tasks : [],
   };
+  const level = strictnessLevel(session.strictness);
+  if (level) body.block_level = level.blockLevel;
+  return body;
 }
 
 /** Body of PATCH /focus-mode/{id}/update_scheduled_finish. */
@@ -307,8 +472,9 @@ export function finishBody(session, { achievements = '', distractions = '' } = {
     achievements: encodeText(achievements),
     distractions: String(distractions ?? '').trim().slice(0, MAX_TEXT),
     finish_time: iso(session.endedAt ?? session.finishTime),
-    metadata: {},
-    to_dos: [],
+    metadata: { focus_duration_seconds: Math.round(elapsedMs(session, session.endedAt ?? session.finishTime) / 1000) },
+    // The tasks finished during the session, as the Windows app sends them.
+    to_dos: doneTasks(session.tasks),
   };
 }
 

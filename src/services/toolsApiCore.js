@@ -3,7 +3,7 @@
 // in the Windows app.
 //
 // `request(method, path, body)` is passed in, for node --test.
-import { PAGE_SIZE, noteBody, pinBody } from './notesModel.js';
+import { BRAIN_DUMP_TITLE, PAGE_SIZE, isBrainDump, noteBody, pinBody, textToHtml } from './notesModel.js';
 import { leaderboardPath } from './statsModel.js';
 import { goalsBody } from './onboardingModel.js';
 
@@ -30,6 +30,18 @@ export function createToolsApi({ request }) {
     /** Creates or updates; returns the note as the server has it. */
     saveNote(note, fields) {
       return request('PUT', '/note', noteBody(note, fields));
+    },
+
+    /**
+     * Adds text to the end of the Brain Dump (creating it for an account that
+     * has none), as the focus session's brain dump box does on Windows.
+     */
+    async appendBrainDump(text) {
+      const addition = String(text ?? '').trim();
+      if (!addition) return null;
+      const existing = list(await request('GET', '/note?page=1&take=50&order=DESC')).find(isBrainDump) || null;
+      const note = existing || { is_brain_dump: true };
+      return request('PUT', '/note', noteBody(note, { title: existing?.title || BRAIN_DUMP_TITLE, body: `${existing?.body || ''}${textToHtml(addition)}` }));
     },
 
     setNotePinned(note, pinned) {

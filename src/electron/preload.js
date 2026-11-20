@@ -104,12 +104,14 @@ const API = {
     // session; see the "Focus session" section of main.js and focusSessionModel.js.
     focusSession: {
         get: function() { return ipcRenderer.invoke('focus-session:get'); },
-        // { modeId, modeName, intention, minutes, synced }
+        // { modeId, modeName, intention, minutes, synced, untimed, strictness, tasks }
         start: function(input) { return ipcRenderer.invoke('focus-session:start', input); },
         pause: function() { return ipcRenderer.invoke('focus-session:pause'); },
         resume: function() { return ipcRenderer.invoke('focus-session:resume'); },
         adjust: function(deltaMinutes) { return ipcRenderer.invoke('focus-session:adjust', deltaMinutes); },
         end: function() { return ipcRenderer.invoke('focus-session:end'); },
+        // The session's task queue after a task was finished or picked.
+        setTasks: function(tasks) { return ipcRenderer.invoke('focus-session:set-tasks', tasks); },
         markReported: function() { return ipcRenderer.invoke('focus-session:mark-reported'); },
         clear: function() { return ipcRenderer.invoke('focus-session:clear'); },
         onChanged: function(callback) {

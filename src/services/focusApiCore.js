@@ -12,7 +12,9 @@
 // `fetch` and `getToken` are passed in so this file has no browser or Electron
 // imports and can be tested with node --test. focusApi.js binds the real ones.
 import {
+  candidateTasks,
   defaultModeBody,
+  taskDoneBody,
   findSummaryRow,
   finishBody,
   pickDefaultMode,
@@ -69,6 +71,32 @@ export function createFocusApi({ fetch, getToken, baseUrl = API_BASE_URL, newId 
   return {
     getFocusModes,
     ensureDefaultMode,
+
+    /** Unfinished to-dos to pick from on the start screen: in progress first (smart order). */
+    async getCandidateTasks(take = 20) {
+      const page = (status) =>
+        request('GET', `/to-do?page=1&take=${take}&order=DESC&sort_mode=SMART&status=${status}`)
+          .then((result) => (Array.isArray(result?.data) ? result.data : []))
+          .catch(() => []);
+      const [inProgress, notStarted] = await Promise.all([page('IN_PROGRESS'), page('NOT_STARTED')]);
+      return candidateTasks(inProgress, notStarted);
+    },
+
+    async searchTasks(title) {
+      const result = await request('GET', `/to-do/search?title=${encodeURIComponent(String(title).trim())}&take=10`);
+      const list = Array.isArray(result) ? result : Array.isArray(result?.data) ? result.data : [];
+      return candidateTasks(list, []);
+    },
+
+    /** A task typed on the start screen: created straight away, due today. `body` comes from newTaskBody. */
+    createTask(body) {
+      return request('PUT', '/to-do', body);
+    },
+
+    /** Ticks a queue task off in the to-do list. */
+    completeTask(row) {
+      return request('PUT', '/to-do', taskDoneBody(row));
+    },
 
     startSession(session) {
       return request('POST', `${modePath(session.modeId)}/start`, startBody(session));

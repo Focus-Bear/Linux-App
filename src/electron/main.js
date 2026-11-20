@@ -22,8 +22,7 @@ import {
   pauseSession,
   remainingMs,
   restoreSession,
-  resumeSession,
-} from './focusSessionModel.js';
+  resumeSession, hasStopFriction } from './focusSessionModel.js';
 import { ALLOW_ONLY_RENEW_MS, DEFAULT_BLOCK_SETTINGS, blockSettingsMessage, normaliseBlockSettings } from './blockSettings.js';
 import {
   WARNING_SECONDS,
@@ -792,6 +791,12 @@ ipcMain.handle('focus-session:adjust', (event, deltaMinutes) =>
     setFocusSession(adjustSession(focusSession, Number(deltaMinutes) || 0, Date.now())));
 ipcMain.handle('focus-session:end', () => setFocusSession(endSession(focusSession, Date.now())));
 
+// The task queue changed (a task was finished, or another one was picked).
+ipcMain.handle('focus-session:set-tasks', (event, tasks) => {
+    if (!isSessionActive(focusSession) || !Array.isArray(tasks)) return focusSession;
+    return setFocusSession({ ...focusSession, tasks });
+});
+
 // The renderer has sent the finish to the server (or gave up); don't send it again.
 ipcMain.handle('focus-session:mark-reported', () => {
     if (!focusSession || focusSession.status !== 'ended') return focusSession;
@@ -985,6 +990,12 @@ ipcMain.on('focus-session-true', function(event) {
 ipcMain.on('focus-session-false', function(event) {
     if (!isFocusActive) {
         event.sender.send('focus-session-result', 'Focus session already inactive');
+        return;
+    }
+    // A Captain or Pawfessor session isn't stopped from the tray: the session
+    // screen opens, where the delay or the characters to type are.
+    if (hasStopFriction(focusSession)) {
+        showMainWindowOn('focus-session');
         return;
     }
     setFocusSession(endSession(focusSession, Date.now()));

@@ -60,7 +60,7 @@ test('finishing posts the time the session actually ended', async () => {
   await focusApi.finishSession(endSession(session(), T0 + 10 * MIN));
   assert.equal(calls[0].url, 'https://api.test/focus-mode/mode%201/finish');
   assert.equal(calls[0].body.finish_time, '2026-11-21T09:10:00.000Z');
-  assert.deepEqual(calls[0].body.metadata, {});
+  assert.deepEqual(calls[0].body.metadata, { focus_duration_seconds: 600 });
 });
 
 test('a changed finish time is PATCHed', async () => {
