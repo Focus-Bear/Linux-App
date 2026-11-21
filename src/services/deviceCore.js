@@ -11,9 +11,10 @@
 // The app registers as 'Linux' (#159). A server that doesn't have that
 // operating system yet refuses it, and the app then registers as 'Web' and
 // says it is Linux in metadata, as it did before. An install that holds such a
-// 'Web' registration asks the server to change it to 'Linux'
-// (PATCH /device/{id}), which keeps the same id, and asks again later while
-// the server still refuses.
+// 'Web' registration moves to 'Linux': it takes the account's Linux device if
+// there is one (GET /device/search), and otherwise asks the server to change
+// its own (PATCH /device/{id}), which keeps the same id. It asks again later
+// while the server still refuses.
 //
 // No browser or Electron imports: everything is passed in, for node --test.
 
@@ -86,22 +87,31 @@ async function register(request, appVersion) {
 }
 
 /**
- * Asks the server to turn the saved 'Web' registration into 'Linux'.
- * Returns 'migrated', 'later' (refused or unreachable: keep using the id) or
- * 'gone' (the account no longer has that device).
+ * Moves the saved 'Web' registration to 'Linux'. If the account already has a
+ * Linux device (the server makes one when an account is created from the Linux
+ * app), that one is used, so the account doesn't end up with two; otherwise
+ * the Web device is changed in place. Returns the id to use, or null when the
+ * account no longer has the saved device.
  */
 async function migrate({ request, saveSettings, settings, userId, id, now, attempts }) {
   const last = attempts.get(userId);
-  if (last !== undefined && now - last < MIGRATION_RETRY_MS) return 'later';
+  if (last !== undefined && now - last < MIGRATION_RETRY_MS) return id;
   attempts.set(userId, now);
+  let linuxId = id;
   try {
-    await request('PATCH', `/device/${id}`, { operating_system: DEVICE_OPERATING_SYSTEM });
+    const existing = await request('GET', `/device/search?operating_system=${DEVICE_OPERATING_SYSTEM}`);
+    if (isDeviceId(existing?.id)) linuxId = existing.id;
+    else await request('PATCH', `/device/${id}`, { operating_system: DEVICE_OPERATING_SYSTEM });
   } catch (error) {
-    return error?.status === 404 ? 'gone' : 'later';
+    // Refused or unreachable: keep using the Web id. 404: the device is gone.
+    return error?.status === 404 ? null : id;
   }
   attempts.delete(userId);
-  await saveSettings({ deviceOs: withDeviceOs(settings, userId, DEVICE_OPERATING_SYSTEM) }).catch(() => {});
-  return 'migrated';
+  await saveSettings({
+    devices: withDevice(settings, userId, linuxId),
+    deviceOs: withDeviceOs(settings, userId, DEVICE_OPERATING_SYSTEM),
+  }).catch(() => {});
+  return linuxId;
 }
 
 /**
@@ -127,8 +137,8 @@ export async function ensureDevice({
   const saved = force ? null : savedDeviceId(settings, userId);
   if (saved) {
     if (savedDeviceOs(settings, userId) === DEVICE_OPERATING_SYSTEM) return saved;
-    const outcome = await migrate({ request, saveSettings, settings, userId, id: saved, now, attempts });
-    if (outcome !== 'gone') return saved;
+    const id = await migrate({ request, saveSettings, settings, userId, id: saved, now, attempts });
+    if (id) return id;
   }
   const { id, operatingSystem } = await register(request, appVersion);
   // The server has just refused 'Linux': no need to ask again straight away.

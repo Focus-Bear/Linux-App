@@ -155,9 +155,9 @@ test('registering fails when the server is down or the user is signed out: no We
   }
 });
 
-test('a saved Web registration becomes Linux with PATCH /device/{id}, keeping the id', async () => {
+test('a saved Web registration becomes Linux with PATCH /device/{id}, keeping the id, when the account has no Linux device', async () => {
   for (const settings of [{ devices: { 'auth0|a': DEVICE } }, { devices: { 'auth0|a': DEVICE }, deviceOs: { 'auth0|a': 'Web' } }]) {
-    const { request, requests } = queuedRequest([{ id: DEVICE, operating_system: 'Linux' }]);
+    const { request, requests } = queuedRequest([null, { id: DEVICE, operating_system: 'Linux' }]);
     const saved = [];
     const id = await ensureDevice({
       request,
@@ -167,13 +167,31 @@ test('a saved Web registration becomes Linux with PATCH /device/{id}, keeping th
       attempts: new Map(),
     });
     assert.equal(id, DEVICE);
-    assert.deepEqual(requests, [{ method: 'PATCH', path: `/device/${DEVICE}`, body: { operating_system: 'Linux' } }]);
-    assert.deepEqual(saved, [{ deviceOs: { 'auth0|a': 'Linux' } }]);
+    assert.deepEqual(requests, [
+      { method: 'GET', path: '/device/search?operating_system=Linux', body: undefined },
+      { method: 'PATCH', path: `/device/${DEVICE}`, body: { operating_system: 'Linux' } },
+    ]);
+    assert.deepEqual(saved, [{ devices: { 'auth0|a': DEVICE }, deviceOs: { 'auth0|a': 'Linux' } }]);
   }
 });
 
+test('an account that already has a Linux device uses it instead of making a second one', async () => {
+  const { request, requests } = queuedRequest([{ id: OTHER, operating_system: 'Linux' }]);
+  const saved = [];
+  const id = await ensureDevice({
+    request,
+    loadSettings: async () => ({ devices: { 'auth0|a': DEVICE, 'auth0|b': DEVICE } }),
+    saveSettings: async (patch) => saved.push(patch),
+    userId: 'auth0|a',
+    attempts: new Map(),
+  });
+  assert.equal(id, OTHER);
+  assert.deepEqual(requests, [{ method: 'GET', path: '/device/search?operating_system=Linux', body: undefined }]);
+  assert.deepEqual(saved, [{ devices: { 'auth0|a': OTHER, 'auth0|b': DEVICE }, deviceOs: { 'auth0|a': 'Linux' } }]);
+});
+
 test('while the server refuses Linux the Web id is kept, and it is asked again only after a while', async () => {
-  const { request, requests } = queuedRequest([refused(400), refused(500), { id: DEVICE }]);
+  const { request, requests } = queuedRequest([refused(400), refused(500), null, { id: DEVICE }]);
   const saved = [];
   const attempts = new Map();
   const call = (now) =>
@@ -193,9 +211,8 @@ test('while the server refuses Linux the Web id is kept, and it is asked again o
   assert.equal(requests.length, 2);
   assert.deepEqual(saved, []);
   assert.equal(await call(T0 + 2 * MIGRATION_RETRY_MS), DEVICE); // asked: accepted
-  assert.equal(requests.length, 3);
-  assert.deepEqual(saved, [{ deviceOs: { 'auth0|a': 'Linux' } }]);
-  assert.equal(requests.every((r) => r.method === 'PATCH'), true);
+  assert.deepEqual(requests.map((r) => r.method), ['GET', 'GET', 'GET', 'PATCH']);
+  assert.deepEqual(saved, [{ devices: { 'auth0|a': DEVICE }, deviceOs: { 'auth0|a': 'Linux' } }]);
 });
 
 test('one account being refused does not hold back another', async () => {
@@ -206,11 +223,11 @@ test('one account being refused does not hold back another', async () => {
     ensureDevice({ request, loadSettings: async () => settings, saveSettings: async () => {}, userId, now: T0, attempts });
   assert.equal(await call('a'), DEVICE);
   assert.equal(await call('b'), OTHER);
-  assert.deepEqual(requests.map((r) => r.path), [`/device/${DEVICE}`, `/device/${OTHER}`]);
+  assert.equal(requests.length, 2);
 });
 
 test('a saved Web device the account no longer has is registered again, as Linux', async () => {
-  const { request, requests } = queuedRequest([refused(404), { id: OTHER, operating_system: 'Linux' }]);
+  const { request, requests } = queuedRequest([null, refused(404), { id: OTHER, operating_system: 'Linux' }]);
   const saved = [];
   const id = await ensureDevice({
     request,
@@ -221,7 +238,7 @@ test('a saved Web device the account no longer has is registered again, as Linux
     attempts: new Map(),
   });
   assert.equal(id, OTHER);
-  assert.deepEqual(requests.map((r) => `${r.method} ${r.path}`), [`PATCH /device/${DEVICE}`, 'POST /device']);
+  assert.deepEqual(requests.map((r) => `${r.method} ${r.path}`), ['GET /device/search?operating_system=Linux', `PATCH /device/${DEVICE}`, 'POST /device']);
   assert.deepEqual(saved, [{ devices: { 'auth0|a': OTHER }, deviceOs: { 'auth0|a': 'Linux' } }]);
 });
 
