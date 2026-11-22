@@ -44,7 +44,7 @@ const App = function() {
 
     if (window.api?.onAuthProtocolCallback) {
       window.api.onAuthProtocolCallback((url) => {
-        console.log('[App] Received auth callback from main process:', url);
+
         callbackReceived = true;
         const urlObj = new URL(url);
         if (urlObj.searchParams.has('code')) {
@@ -59,6 +59,8 @@ const App = function() {
         initializeAuth();
       }
     }, 200);
+    // Runs once at start-up; initializeAuth is recreated on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 

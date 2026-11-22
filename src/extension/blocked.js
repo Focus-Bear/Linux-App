@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   let domain = '';
   try {
     domain = new URL(blockedUrl).hostname;
-  } catch (e) {
+  } catch {
     if (domainBtn) domainBtn.disabled = true;
   }
 
@@ -159,7 +159,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       try {
         await browser.runtime.sendMessage({ type: 'ADD_WHITELIST', pattern: domain, patternType: 'domain', durationMs: getDurationMs() });
         window.location.href = blockedUrl;
-      } catch (e) {
+      } catch {
         domainBtn.textContent = 'Failed — try again';
         domainBtn.disabled = false;
       }
@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       try {
         await browser.runtime.sendMessage({ type: 'ADD_WHITELIST', pattern: blockedUrl, patternType: 'exact', durationMs: getDurationMs() });
         window.location.href = blockedUrl;
-      } catch (e) {
+      } catch {
         exactBtn.textContent = 'Failed — try again';
         exactBtn.disabled = false;
       }

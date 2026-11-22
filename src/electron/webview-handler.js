@@ -3,6 +3,8 @@ import { WebContentsView, session } from 'electron';
 import { webViewConfigs } from './webview-ids.js';
 import { MESSAGE_SHIM, parseWebViewMessage } from './webview-messages.js';
 import { reuseDecision, signInOf } from './webviewReuse.js';
+import { isDashboardNavigation, isDashboardOrigin, isFocusBearLink } from './security.js';
+import { shell } from 'electron';
 
 export { webViewConfigs };
 
@@ -98,10 +100,22 @@ export function createWebView(config) {
         webView.webContents.executeJavaScript(MESSAGE_SHIM).catch(() => {});
     });
 
+    // The pages hold the account's token: they stay on Focus Bear's own sites
+    // (and its sign-in), and links to anything else are not followed inside the app.
+    webView.webContents.on('will-navigate', (event, target) => {
+        if (!isDashboardNavigation(target)) event.preventDefault();
+    });
+    webView.webContents.setWindowOpenHandler(({ url: target }) => {
+        if (isFocusBearLink(target)) shell.openExternal(target);
+        return { action: 'deny' };
+    });
+
     webView.webContents.on('console-message', (event, level, message) => {
         const sent = parseWebViewMessage(message);
         if (sent !== undefined) {
-            if (typeof onMessage === 'function') onMessage(id, sent);
+            // Only the dashboard page itself may talk to the app this way, not
+            // whatever else ended up in the view.
+            if (typeof onMessage === 'function' && isDashboardOrigin(webView.webContents.getURL())) onMessage(id, sent);
             return;
         }
         console.log(`[WebView ${id} Console]:`, message);
@@ -120,7 +134,7 @@ async function injectAuthTokens(webView, webViewId, metadata) {
 
     if (!auth0ClientId) {
         console.error(`[WebView Handler] CRITICAL: client_id is undefined for ${webViewId}!`);
-        console.error(`[WebView Handler] Metadata received:`, metadata);
+
         return;
     }
 
@@ -393,7 +407,8 @@ function getInjectionConfigForWebView(webViewId, metadata) {
 /** Hands a page its sign-in data again (it asked with 'invoke-js-function'). */
 export function resendWebViewMetadata(id, metadata) {
     const webView = webViews.get(id);
-    if (webView && metadata) callWindowFunction(webView, id, metadata);
+    // Not to a page that has left the dashboard: the data includes the access token.
+    if (webView && metadata && isDashboardOrigin(webView.webContents.getURL())) callWindowFunction(webView, id, metadata);
 }
 
 /** Forgets a page, so the next visit loads it afresh. */

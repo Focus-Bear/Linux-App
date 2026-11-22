@@ -98,7 +98,6 @@
   </div>
 
   <script>
-    const { ipcRenderer } = require('electron');
 
     const browserName = new URLSearchParams(window.location.search).get('browser') || 'your browser';
     document.querySelectorAll('.browser-name').forEach(el => { el.textContent = browserName; });
@@ -113,7 +112,7 @@
     }, 1000);
 
     document.getElementById('closeNow').addEventListener('click', () => {
-      ipcRenderer.send('extension-warning-close-browser');
+      window.api.closeBrowserNow();
     });
   </script>
 </body>

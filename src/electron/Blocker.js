@@ -1,7 +1,3 @@
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 import { ipcMain } from 'electron';
 
 // Import broadcast function from main (we'll export it)
@@ -12,19 +8,12 @@ export function setBroadcastFunction(broadcastFn) {
 }
 
 ipcMain.on("url-channel", function (event, arg) {
-
-  let urls = []
-  console.log(arg);
+  if (typeof arg !== 'string') return;
 
   const urlArray = arg
     .split('\n')
     .map(url => url.trim())
     .filter(url => url.length > 0);
-
-  console.log(urlArray)
-  console.log("\n")
-  console.log(typeof(urlArray))
-
 
   try {
     // Broadcast to native messaging hosts
@@ -42,24 +31,6 @@ ipcMain.on("url-channel", function (event, arg) {
 
 });
 
-ipcMain.on("keywords-channel", function (event, arg) {
 
-  let urls = []
-  console.log(arg);
-
-  const urlArray = arg
-    .split('\n')
-    .map(url => url.trim())
-    .filter(url => url.length > 0);
-
-  console.log(urlArray)
-  console.log("\n")
-  console.log(typeof(urlArray))
-
-  // Keywords functionality not yet implemented for native messaging
-  console.log(`\nReceived ${urlArray.length} keywords (not yet implemented)\n`);
-  event.reply('reply-message', `Keywords received: ${urlArray.length} (not yet implemented)`);
-
-});
 
 

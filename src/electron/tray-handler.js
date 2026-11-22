@@ -81,7 +81,7 @@ function createTray(mainWindow){
 
     tray.setToolTip('Focus Bear')
 
-    tray.on('click', function (event, bounds) {
+    tray.on('click', function () {
         if (trayWindow && trayWindow.isVisible()) {
             trayWindow.destroy()
         } 
