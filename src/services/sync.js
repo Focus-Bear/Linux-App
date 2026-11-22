@@ -1,15 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { nativeAuthService } from '../services/nativeAuth.js';
-import {
-  addEntry,
-  fromDeviceSettings,
-  keywordsOf,
-  normaliseKeyword,
-  parseDeviceSettings,
-  removeFromView,
-  sitesOf,
-  toDeviceSettings,
-} from './blocklist.js';
+import { addEntry, keywordsOf, normaliseKeyword, removeFromView, sitesOf } from './blocklist.js';
+import { SYNC, createSettingsSync } from './settingsSyncCore.js';
 
 const SYNCED_STATES = {
   selectedBlockMode: 'manual',
@@ -32,230 +24,58 @@ const SYNCED_STATES = {
   focusMusicAutoStart: 'ask'
 };
 
-const API_BASE_URL = 'https://api.focusbear.io';
+const API_URL = 'https://api.focusbear.io/user-local-device-settings';
 
-class SimpleAuth0Sync {
-  constructor() {
-    this.subscribers = new Map();
-    this.cache = new Map();
-    this.isInitialized = false;
-    this.saveTimeout = null;
-    this.rawAPIData = null;
-  }
-
-  async initialize() {
-    if (this.isInitialized) return;
-
-    try {
-      const savedSettings = await this.loadFromFocusBearAPI();
-
-      if (savedSettings) {
-        Object.entries(savedSettings).forEach(([key, value]) => {
-          if (key in SYNCED_STATES) {
-            this.cache.set(key, value);
-          }
-        });
-        console.log('[Sync] Loaded settings from Focus Bear API:', savedSettings);
-      } else {
-        Object.entries(SYNCED_STATES).forEach(([key, value]) => {
-          this.cache.set(key, value);
-        });
-        console.log('[Sync] Using default settings');
-      }
-
-      this.isInitialized = true;
-    } catch (error) {
-      console.error('[Sync] Failed to initialize settings:', error);
-      Object.entries(SYNCED_STATES).forEach(([key, value]) => {
-        this.cache.set(key, value);
-      });
-      this.isInitialized = true;
-    }
-  }
-
-  async loadFromFocusBearAPI() {
-    try {
-      const token = await nativeAuthService.getToken();
-      if (!token) {
-        console.log('[Sync] No token available for API call');
-        return null;
-      }
-
-      const API_URL = `${API_BASE_URL}/user-local-device-settings`;
-
-      console.log('[Sync] Fetching settings from API...');
-      const response = await fetch(API_URL, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          console.log('[Sync] No settings found on server (404)');
-          this.rawAPIData = {};
-          return null;
-        }
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('[Sync] Raw API response:', data);
-
-      this.rawAPIData = data;
-
-      if (!data.MacOS) {
-        console.log('[Sync] No MacOS key in response');
-        return null;
-      }
-
-      const mappedSettings = fromDeviceSettings(parseDeviceSettings(data.MacOS));
-
-      console.log('[Sync] Mapped settings:', mappedSettings);
-      return mappedSettings;
-
-    } catch (error) {
-      console.error('[Sync] Failed to load from Focus Bear API:', error);
-      return null;
-    }
-  }
-
-  async saveToFocusBearAPI(settings) {
-    try {
-      const token = await nativeAuthService.getToken();
-      if (!token) {
-        console.error('[Sync] No token available for save');
-        throw new Error('No token available');
-      }
-
-      const API_URL = `${API_BASE_URL}/user-local-device-settings`;
-
-      let baseData = this.rawAPIData || {};
-
-      baseData.MacOS = toDeviceSettings(parseDeviceSettings(baseData.MacOS), settings);
-
-      console.log('[Sync] Saving to API:', baseData);
-
-      const response = await fetch(API_URL, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(baseData)
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Sync] API save failed:', response.status, errorText);
-        throw new Error(`Failed to save: ${response.status}`);
-      }
-
-      console.log('[Sync] Settings saved to Focus Bear API successfully');
-      this.rawAPIData = baseData;
-      return true;
-
-    } catch (error) {
-      console.error('[Sync] Failed to save to Focus Bear API:', error);
-      throw error;
-    }
-  }
-
-  getValue(key) {
-    return this.cache.get(key) ?? SYNCED_STATES[key];
-  }
-
-  async setValue(key, value) {
-    this.cache.set(key, value);
-
-    // Notify subscribers
-    const subscribers = this.subscribers.get(key);
-    if (subscribers) {
-      subscribers.forEach(callback => callback(value));
-    }
-
-    if (key === 'urlList') {
-      window.api?.exportList?.(value.join('\n'));
-    }
-    if (key === 'immediatelyBlock') {
-      window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(value) });
-    }
-
-    // Queue save with debouncing
-    this.queueSave();
-  }
-
-  queueSave() {
-    clearTimeout(this.saveTimeout);
-    this.saveTimeout = setTimeout(async () => {
-      try {
-        const allSettings = {};
-        for (const [key, value] of this.cache.entries()) {
-          allSettings[key] = value;
-        }
-
-        // Save to Focus Bear API
-        await this.saveToFocusBearAPI(allSettings);
-        
-        // Also save locally via IPC for offline access
-        await window.api?.saveSettings(allSettings);
-        
-      } catch (error) {
-        console.error('Failed to save settings:', error);
-      }
-    }, 1000);
-  }
-
-  subscribe(key, callback) {
-    if (!this.subscribers.has(key)) {
-      this.subscribers.set(key, new Set());
-    }
-    this.subscribers.get(key).add(callback);
-
-    return () => {
-      const subscribers = this.subscribers.get(key);
-      if (subscribers) {
-        subscribers.delete(callback);
-      }
-    };
-  }
-
-  getAllSettings() {
-    const result = {};
-    for (const key of Object.keys(SYNCED_STATES)) {
-      result[key] = this.getValue(key);
-    }
-    return result;
-  }
-
-  async forceSync() {
-    try {
-      const settings = await this.loadFromFocusBearAPI();
-      if (settings) {
-        Object.entries(settings).forEach(([key, value]) => {
-          if (key in SYNCED_STATES) {
-            this.cache.set(key, value);
-            const subscribers = this.subscribers.get(key);
-            if (subscribers) {
-              subscribers.forEach(callback => callback(value));
-            }
-          }
-        });
-        const urlList = this.cache.get('urlList') ?? SYNCED_STATES.urlList;
-        window.api?.exportList?.(urlList.join('\n'));
-        window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(this.getValue('immediatelyBlock')) });
-        console.log('Force sync completed from Focus Bear API');
-      }
-    } catch (error) {
-      console.error('Force sync failed:', error);
-      throw error;
-    }
-  }
+/** GET or PUT the account's device settings; throws when the request can't be made. */
+async function request(method, body) {
+  const token = await nativeAuthService.getToken();
+  if (!token) throw new Error('Not signed in');
+  const headers = { Authorization: `Bearer ${token}` };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch(API_URL, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(20000),
+  });
+  let data = null;
+  if (response.ok && method === 'GET') data = await response.json().catch(() => null);
+  return { status: response.status, data };
 }
 
-const auth0Sync = new SimpleAuth0Sync();
+// The load / save rules (never save before a load, read before each write,
+// write only what changed here) are in settingsSyncCore.js.
+const auth0Sync = createSettingsSync({
+  defaults: SYNCED_STATES,
+  request,
+  loadLocal: () => window.api?.getLocalSettings?.() ?? null,
+  saveLocal: (copy) => window.api?.saveSettings?.(copy),
+  getUserId: () => nativeAuthService.getUser()?.sub || '',
+  // What the browser extensions block follows the settings in force.
+  onApply: (key, value) => {
+    if (key === 'urlList') window.api?.exportList?.((Array.isArray(value) ? value : []).join('\n'));
+    if (key === 'immediatelyBlock') window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(value) });
+  },
+});
+
+// Back on the network: load what could not be loaded, send what is waiting.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    auth0Sync.retry();
+  });
+}
+
+/** 'loading' | 'syncing' | 'synced' | 'pending' | 'offline' (see settingsSyncCore.js). */
+export const useSyncStatus = () => useSyncExternalStore(auth0Sync.onStatus, auth0Sync.status);
+
+/** What the sidebar says about each status. */
+export const SYNC_TEXT = {
+  [SYNC.LOADING]: 'Syncing…',
+  [SYNC.SYNCING]: 'Syncing…',
+  [SYNC.SYNCED]: 'Synced',
+  [SYNC.PENDING]: 'Changes not synced yet',
+  [SYNC.OFFLINE]: 'Not synced',
+};
 
 // React hooks
 export const useSyncedState = (key) => {
@@ -267,12 +87,17 @@ export const useSyncedState = (key) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     const init = async () => {
       await auth0Sync.initialize();
+      if (cancelled) return;
       setValue(auth0Sync.getValue(key));
       setIsLoading(false);
     };
     init();
+    return () => {
+      cancelled = true;
+    };
   }, [key]);
 
   useEffect(() => {

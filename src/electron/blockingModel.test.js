@@ -144,7 +144,7 @@ test('switching a custom list between block list and allow list moves its sites'
 
 test('saving sends every list with id, name, allowed_urls and its whole metadata', () => {
   assert.deepEqual(listBody(STUDY), { id: STUDY.id, name: 'Study', allowed_urls: STUDY.allowed_urls, metadata: STUDY.metadata, categories: [] });
-  assert.deepEqual(Object.keys(listBody({ ...SOCIAL, user_id: 'u', created_at: 'x', tags: [] })), ['id', 'name', 'allowed_urls', 'metadata']);
+  assert.deepEqual(Object.keys(listBody({ ...SOCIAL, user_id: 'u', created_at: 'x' })), ['id', 'name', 'allowed_urls', 'metadata']);
   const body = allListsBody([...MODES, { id: 'accountability-buddy', name: 'Local only' }, null]);
   assert.equal(body.length, MODES.length);
 });
@@ -349,22 +349,53 @@ function recorder(answers = {}) {
   return { calls, request };
 }
 
-test('lists: read, create with a new id, save all of them, delete by query id', async () => {
+test('lists: read, create with a new id, save one from a fresh copy, delete by query id', async () => {
   const { calls, request } = recorder({ 'GET /user/focus-modes': MODES });
   const api = createBlockingApi({ request, getDeviceId: async () => 'dev-1', newId: () => ID(9) });
   assert.equal((await api.getLists()).length, MODES.length);
   const created = await api.createList('Writing', 'allow');
   assert.equal(created.id, ID(9));
-  await api.saveLists([SOCIAL, STUDY]);
+  const { saved, modes } = await api.updateList(SOCIAL.id, (fresh) => ({ ...fresh, name: 'Social media' }));
   await api.deleteList(SOCIAL.id);
   assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), [
     'GET /user/focus-modes',
     'POST /focus-mode',
+    'GET /user/focus-modes', // read again right before the save
     'PUT /focus-mode',
     `DELETE /focus-mode?id=${SOCIAL.id}`,
   ]);
   assert.equal(calls[1].body.metadata.isAllowedListApproach, true);
-  assert.deepEqual(calls[2].body.map((m) => m.id), [SOCIAL.id, STUDY.id]);
+  assert.deepEqual(calls[3].body.map((m) => m.id), [SOCIAL.id], 'only the changed list is sent');
+  assert.equal(saved.name, 'Social media');
+  assert.equal(modes.length, MODES.length);
+});
+
+test('saving a list that is no longer on the account says so and sends nothing', async () => {
+  const { calls, request } = recorder({ 'GET /user/focus-modes': [STUDY] });
+  const api = createBlockingApi({ request, getDeviceId: async () => 'dev-1' });
+  await assert.rejects(() => api.updateList(SOCIAL.id, (fresh) => fresh), { name: 'ListGoneError' });
+  assert.deepEqual(calls.map((c) => c.method), ['GET']);
+});
+
+test('a new schedule takes the id the server gives it, so it can be edited straight away', async () => {
+  const { calls, request } = recorder({ 'POST /blocking-schedules': { id: ID(77), name: 'Work hours' } });
+  const api = createBlockingApi({ request, getDeviceId: async () => 'dev-1', newId: () => ID(9) });
+  const draft = { name: 'Work hours', start: '09:00', end: '17:00', days: [1, 2, 3], modeId: SOCIAL.id };
+  const created = await api.saveSchedule(draft);
+  assert.equal(created.id, ID(77), 'not the id made here');
+  await api.saveSchedule({ ...draft, end: '18:00' }, created);
+  await api.deleteSchedule(created.id);
+  assert.deepEqual(calls.map((c) => `${c.method} ${c.path}`), [
+    'POST /blocking-schedules?device_id=dev-1',
+    `PUT /blocking-schedules/${ID(77)}?device_id=dev-1`,
+    `DELETE /blocking-schedules/${ID(77)}?device_id=dev-1`,
+  ]);
+});
+
+test('lists go back with their tags (the server drops tags that are not sent)', () => {
+  const tagged = { ...SOCIAL, tags: [{ id: 't1', text: 'deep', user_id: 'u', created_at: 'x' }] };
+  assert.deepEqual(listBody(tagged).tags, [{ id: 't1', text: 'deep' }]);
+  assert.equal('tags' in listBody(SOCIAL), false);
 });
 
 test('a list that is already gone counts as deleted; other failures are passed on', async () => {
@@ -378,12 +409,13 @@ test('a list that is already gone counts as deleted; other failures are passed o
 });
 
 test('schedules: create, update and delete carry the device id; they still work without one', async () => {
-  const { calls, request } = recorder({ 'GET /blocking-schedules': [schedule()] });
+  const { calls, request } = recorder({ 'GET /blocking-schedules': [schedule()], 'POST /blocking-schedules': { id: 'server-id' } });
   const api = createBlockingApi({ request, getDeviceId: async () => 'dev 1', newId: () => 'new-id' });
   assert.equal((await api.getSchedules()).length, 1);
   const draft = { name: 'Evenings', days: [1], start: '18:00', end: '21:00', modeId: STUDY.id };
   const created = await api.saveSchedule(draft);
-  assert.equal(created.id, 'new-id');
+  assert.equal(created.id, 'server-id');
+  assert.equal(created.name, 'Evenings');
   const updated = await api.saveSchedule({ ...draft, name: 'Nights' }, { ...schedule(), user_id: 'u' });
   assert.equal(updated.name, 'Nights');
   assert.equal(updated.user_id, 'u');

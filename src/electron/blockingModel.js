@@ -181,6 +181,11 @@ export function withKind(mode, kind) {
 export function listBody(mode) {
   const body = { id: mode.id, name: mode.name || '', allowed_urls: strings(mode.allowed_urls), metadata: meta(mode) };
   if (Array.isArray(mode.categories)) body.categories = mode.categories;
+  // The server replaces a list's tags with the ones sent (none sent = none
+  // left), so tags that came with the list go back with it.
+  if (Array.isArray(mode.tags)) {
+    body.tags = mode.tags.filter((tag) => tag && tag.id).map((tag) => ({ id: tag.id, text: tag.text }));
+  }
   return body;
 }
 

@@ -3,7 +3,7 @@ import Preferences from './preferences.jsx';
 import UpdateNotification from './UpdateNotification.jsx';
 import Setup from './Setup.jsx';
 import { nativeAuthService } from '../services/nativeAuth.js';
-import { auth0Sync } from '../services/sync.js';
+import { auth0Sync, useSyncStatus } from '../services/sync.js';
 import { habitApi } from '../services/habitApi.js';
 import OnboardingPage from './onboarding.jsx';
 import { needsOnboarding, withOnboardingDone } from '../services/onboardingModel.js';
@@ -15,7 +15,9 @@ const App = function() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [syncStatus, setSyncStatus] = useState('idle');
+  // What the settings sync really did: 'offline' when the account's settings
+  // could not be read, 'pending' while a change made here isn't saved yet.
+  const syncStatus = useSyncStatus();
   const [setupComplete, setSetupComplete] = useState(null); // null=checking, false=needed, true=done
   // First-run onboarding for a new account; `startPage` is where it hands over to the app.
   const [onboarding, setOnboarding] = useState(false);
@@ -76,9 +78,7 @@ const App = function() {
         setUser(userData);
         setIsAuthenticating(false);
 
-        setSyncStatus('loading');
         await initializeCloudSync();
-        setSyncStatus('synced');
         return;
       }
 
@@ -88,9 +88,7 @@ const App = function() {
         const userData = nativeAuthService.getUser();
         setUser(userData);
 
-        setSyncStatus('loading');
         await initializeCloudSync();
-        setSyncStatus('synced');
       } else {
         console.log('[App] User not authenticated, starting auto-login...');
         setIsAuthenticating(true);
@@ -100,7 +98,6 @@ const App = function() {
       console.error('[App] Auth initialization failed:', error);
       setIsAuthenticating(false);
       setSettingsLoaded(false);
-      setSyncStatus('error');
     } finally {
       setIsLoading(false);
     }
@@ -108,21 +105,12 @@ const App = function() {
 
   const initializeCloudSync = async function() {
     try {
-      console.log('Initializing cloud sync...');
-      
-      // Initialize the cloud sync manager
+      // Loads the account's settings. The block list and "Immediately block"
+      // are sent to the main process by the sync itself, and only when they
+      // came from the account, the copy saved on this computer or the person:
+      // never the built-in defaults (an offline start used to replace the
+      // extensions' list with facebook.com and x.com).
       await auth0Sync.initialize();
-      
-      // Load initial settings and send to main process
-      const allStates = auth0Sync.getAllSettings();
-      console.log('Cloud sync initialized with states:', allStates);
-      
-      // Send URL list to main process
-      if (allStates.urlList && window.api?.exportList) {
-        const urlString = allStates.urlList.join('\n');
-        window.api.exportList(urlString);
-      }
-      window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(allStates.immediatelyBlock) });
 
       // Register this install as one of the account's devices (once), as the
       // Windows and Mac apps do at sign-in. Habits can't be completed without it.
@@ -137,7 +125,7 @@ const App = function() {
         ]);
         setOnboarding(
           needsOnboarding({
-            deviceSettings: auth0Sync.rawAPIData,
+            deviceSettings: auth0Sync.getDocument(),
             localSettings,
             userId: nativeAuthService.getUser()?.sub || '',
             force: Boolean(info?.forceOnboarding),
@@ -158,7 +146,6 @@ const App = function() {
   const handleManualLogin = async () => {
     setIsAuthenticating(true);
     setSettingsLoaded(false);
-    setSyncStatus('idle');
     try {
       await nativeAuthService.login();
     } catch (error) {
@@ -169,10 +156,11 @@ const App = function() {
 
   const handleLogout = async () => {
     try {
+      // Nothing more is saved for this account, and its settings are forgotten.
+      auth0Sync.reset();
       await nativeAuthService.logout();
       setUser(null);
       setSettingsLoaded(false);
-      setSyncStatus('idle');
     } catch (error) {
       console.error('Logout failed:', error);
     }
@@ -195,12 +183,10 @@ const App = function() {
 
   const handleForceSync = async () => {
     try {
-      setSyncStatus('syncing');
       await auth0Sync.forceSync();
-      setSyncStatus('synced');
     } catch (error) {
-      console.error('Force sync failed:', error);
-      setSyncStatus('error');
+      // Shown as "Not synced" / "Changes not synced yet" (useSyncStatus).
+      console.error('Force sync failed:', error?.message || error);
     }
   };
 

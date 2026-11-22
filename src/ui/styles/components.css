@@ -226,6 +226,12 @@
   color: var(--fb-text-muted);
 }
 
+/* "Not synced" / "Changes not synced yet": said plainly, not hidden in grey. */
+.fb-sidebar__sync--warn {
+  color: var(--fb-danger);
+  font-weight: 600;
+}
+
 .fb-sidebar--collapsed .fb-sidebar__footer {
   display: none;
 }

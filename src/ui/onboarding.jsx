@@ -282,6 +282,9 @@ export default function OnboardingPage({ user, onFinish }) {
       const current = auth0Sync.getValue('urlList') || [];
       const next = mergeBlocked(current, blockSites, [...blockChosen]);
       await auth0Sync.setValue('urlList', next);
+      // Saved now, so a failure shows here ("Couldn't save that") instead of
+      // being lost a second later.
+      await auth0Sync.flush();
       // A site that is now blocked isn't offered as a work site.
       setWorkSites((prev) => prev.filter((site) => !blockChosen.has(site)));
       forward();
@@ -294,8 +297,8 @@ export default function OnboardingPage({ user, onFinish }) {
         const lists = await blockingApi.getLists();
         const existing = lists.find((mode) => mode?.name === WORK_LIST_NAME);
         const list = existing || (await blockingApi.createList(WORK_LIST_NAME, 'allow'));
-        const updated = withEntries(list, [...(list.allowed_urls || []), ...chosen]);
-        await blockingApi.saveLists([...lists.filter((mode) => mode.id !== list.id), updated]);
+        // Only this list is sent, from a copy read just now (not every list of the account).
+        await blockingApi.updateList(list.id, (fresh) => withEntries(fresh, [...(fresh.allowed_urls || []), ...chosen]));
       }
       forward();
     });
