@@ -2,12 +2,15 @@
 import { WebContentsView, session } from 'electron';
 import { webViewConfigs } from './webview-ids.js';
 import { MESSAGE_SHIM, parseWebViewMessage } from './webview-messages.js';
+import { reuseDecision, signInOf } from './webviewReuse.js';
 
 export { webViewConfigs };
 
 const webViews = new Map();
 const webViewInjectionStatus = new Map();
 const webViewThemes = new Map();
+// id -> { userId, token }: whose sign-in the page was loaded with.
+const webViewSignIns = new Map();
 let currentActiveWebView = null;
 
 // Matches BackgroundColor in the Windows app's Theme/LightTheme.xaml / DarkTheme.xaml.
@@ -15,6 +18,14 @@ const backgroundFor = (theme) => (theme === 'DARK' ? '#282828' : '#ffffff');
 
 export function createWebView(config) {
     const { id, url, metadata, onMessage } = config;
+
+    // A page loaded for another account, or with a token that has since been
+    // replaced, is not reused: it would show the previous account's data (or
+    // fail with an expired token). It is loaded afresh with today's sign-in.
+    if (webViews.has(id) && reuseDecision(webViewSignIns.get(id), metadata) === 'reload') {
+        console.log(`[WebView Handler] Sign-in changed since ${id} was loaded; loading it again`);
+        destroyWebView(id, config.mainWindow);
+    }
 
     if (webViews.has(id)) {
         console.log(`[WebView Handler] Reusing existing webview: ${id}`);
@@ -33,6 +44,7 @@ export function createWebView(config) {
     }
 
     console.log(`[WebView Handler] Creating new webview: ${id}`);
+    webViewSignIns.set(id, signInOf(metadata));
 
     const background = backgroundFor(metadata?.theme);
     webViewThemes.set(id, metadata?.theme);
@@ -393,6 +405,19 @@ export function destroyWebView(id, mainWindow) {
     webViews.delete(id);
     webViewInjectionStatus.delete(id);
     webViewThemes.delete(id);
+    webViewSignIns.delete(id);
+}
+
+/** Sign-out: every embedded page goes (they hold the account's token and data). */
+export function destroyAllWebViews(mainWindow) {
+    for (const id of [...webViews.keys()]) destroyWebView(id, mainWindow);
+    currentActiveWebView = null;
+}
+
+/** Sign-out: the pages' stored sign-in (localStorage, cookies, caches of the `persist:dashboard` partition). */
+export function clearDashboardStorage() {
+    const partition = session.fromPartition('persist:dashboard');
+    return Promise.all([partition.clearStorageData(), partition.clearCache()]);
 }
 
 export function switchToWebView(id, mainWindow, bounds) {

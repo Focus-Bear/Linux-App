@@ -121,6 +121,15 @@ const API = {
         },
     },
 
+    // Who is signed in. `signedOut` is the one message that ends everything
+    // the main process holds for the account: the focus session, what the
+    // extensions block, the break timer and the embedded dashboard pages.
+    // options: { forgetUserId } after Delete account.
+    auth: {
+        signedIn: function(userId) { return ipcRenderer.invoke('auth:signed-in', userId); },
+        signedOut: function(options) { return ipcRenderer.invoke('auth:signed-out', options); },
+    },
+
     // The block list in force: { blocklist: string[], allowOnly: string[] | null }.
     // The main process adds it to the always-blocked sites and tells the extensions.
     setModeBlocking: function(blocking) { return ipcRenderer.invoke('blocking:set-mode', blocking); },
