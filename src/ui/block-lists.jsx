@@ -178,9 +178,9 @@ export default function BlockListsPage({ blocking, onOpenDistractingSites }) {
               placeholder="e.g. docs.google.com"
               help="A site (github.com), part of an address (google.com/maps) or a word that appears in the address."
               validate={(value) => entryError(value, entries)}
-              onAdd={(value) => blockingStore.setListEntries(selected.id, [...entries, normaliseEntry(value)])}
+              onAdd={(value) => blockingStore.editListEntries(selected.id, { add: [normaliseEntry(value)] })}
               onRemove={(indices) =>
-                blockingStore.setListEntries(selected.id, entries.filter((_, index) => !indices.has(index)))
+                blockingStore.editListEntries(selected.id, { remove: entries.filter((_, index) => indices.has(index)) })
               }
             />
           )}

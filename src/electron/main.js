@@ -11,7 +11,7 @@ import { promisify } from 'util';
 import "./Blocker.js"
 import { setBroadcastFunction } from './Blocker.js';
 import { focusState } from './focusState.js';
-import { mergeLocalSettings } from './localSettings.js';
+import { createSettingsFile } from './settingsFile.js';
 import { isTrayPage, normaliseTheme } from './trayModel.js';
 import { checkForUpdates, getLastResult, openDownloadUrl, startUpdateChecker } from './updateChecker.js';
 import {
@@ -552,15 +552,21 @@ app.on("ready", function(){
 
     // Only monitor extension liveness after setup is complete.
     // Checked from disk so the decision is made before the renderer loads.
-    fs.readFile(getSettingsPath(), 'utf8')
-      .then(data => {
-        const s = JSON.parse(data);
+    settingsFile.read()
+      .then(s => {
+        if (!s) return; // first run — no settings file yet, skip monitor
         if (s.selectedBrowsers) selectedBrowsers = s.selectedBrowsers;
-        // Last known choice, so it applies before the renderer has signed in and synced.
+        // Last known block list and choice, so they apply before the renderer
+        // has signed in and synced (and when it can't: an offline start).
+        // Without the list the extensions were told to block nothing until
+        // the window had loaded the account.
+        if (Array.isArray(s.urlList) && alwaysBlocklist.length === 0) {
+          broadcastBlocklistUpdate(s.urlList.filter((entry) => typeof entry === 'string'));
+        }
         if (typeof s.immediatelyBlock === 'boolean') broadcastBlockSettings(s);
         if (s.setupComplete) startPingMonitor();
       })
-      .catch(() => {}); // first run — no settings file yet, skip monitor
+      .catch(() => {});
 
     mainWindow = new BrowserWindow({
         autoHideMenuBar: true,
@@ -699,14 +705,7 @@ ipcMain.handle('check-for-updates', async () => {
 });
 ipcMain.on('open-update-download', (event, url) => { openDownloadUrl(url); });
 
-ipcMain.handle('get-local-settings', async () => {
-  try {
-    const data = await fs.readFile(getSettingsPath(), 'utf8');
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-});
+ipcMain.handle('get-local-settings', () => settingsFile.read());
 
 ipcMain.on('setup-complete', () => { startPingMonitor(); });
 
@@ -1221,86 +1220,26 @@ ipcMain.on('open-auth-window', function(event, url) {
 
 //FOR AUTH0 SETTINGS SYNCING
 
-const getSettingsPath = () => {
+// settings.json: saves are merged in (the setup wizard, the settings sync and
+// device registration each save only their own keys), run one at a time and
+// replace the file in one step (see settingsFile.js). The account copy is
+// saved by the renderer (src/services/sync.js).
+function getSettingsPath() {
   return join(app.getPath('userData'), 'settings.json');
-};
-
-ipcMain.handle('get-settings', async () => {
-  try {
-    const cloudSettings = await loadFromAuth0();
-    if (cloudSettings) {
-      console.log('Loaded settings from Auth0:', cloudSettings);
-      saveLocalBackup(cloudSettings);
-      return cloudSettings;
-    }
-  } catch (error) {
-    console.log('Auth0 load failed, trying local fallback:', error.message);
-  }
-
-  try {
-    const settingsPath = getSettingsPath();
-    const data = await fs.readFile(settingsPath, 'utf8');
-    const settings = JSON.parse(data);
-    console.log('Loaded settings from local fallback:', settings);
-    return settings;
-  } catch (error) {
-    console.log('No settings found, using defaults');
-    return null;
-  }
-});
+}
+const settingsFile = createSettingsFile({ path: getSettingsPath(), fs });
 
 ipcMain.handle('save-settings', async (event, settings) => {
   try {
-    // Merge into the file: the setup wizard and the settings sync each save
-    // only their own keys (see localSettings.js).
-    let existing = null;
-    try {
-      existing = JSON.parse(await fs.readFile(getSettingsPath(), 'utf8'));
-    } catch { /* first save, or unreadable file */ }
-    const settingsWithMeta = mergeLocalSettings(existing, settings);
-
-    // The account copy is saved by the renderer (src/services/sync.js, Focus Bear
-    // API). The old 'auth0-save-settings' round trip had no listener in the
-    // renderer, so every save waited 10 s for its timeout before reaching disk.
-    await saveLocalBackup(settingsWithMeta);
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('Nothing to save');
+    await settingsFile.update(settings);
     applySettings(settings);
-
     return { success: true };
   } catch (error) {
-    console.error('Failed to save settings:', error);
+    console.error('Failed to save settings:', error.message);
     return { success: false, error: error.message };
   }
 });
-
-async function loadFromAuth0() {
-  return new Promise((resolve, reject) => {
-    mainWindow.webContents.send('auth0-get-settings');
-
-    const timeout = setTimeout(() => {
-      ipcMain.removeAllListeners('auth0-settings-response');
-      reject(new Error('Timeout loading from Auth0'));
-    }, 5000);
-
-    ipcMain.once('auth0-settings-response', (event, result) => {
-      clearTimeout(timeout);
-      if (result.success) {
-        resolve(result.data);
-      } else {
-        reject(new Error(result.error));
-      }
-    });
-  });
-}
-
-async function saveLocalBackup(settings) {
-  try {
-    const settingsPath = getSettingsPath();
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
-    console.log('Local backup saved:', settingsPath);
-  } catch (error) {
-    console.error('Failed to save local backup:', error);
-  }
-}
 
 function applySettings(settings) {
   if (settings.urlList) {

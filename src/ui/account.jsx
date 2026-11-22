@@ -8,8 +8,9 @@ const SYNC_STATUS = {
   loading: { text: 'Syncing…', tone: '' },
   syncing: { text: 'Syncing…', tone: '' },
   synced: { text: 'Synced with the cloud', tone: 'fb-pill--ok' },
-  error: { text: 'Sync error', tone: 'fb-pill--error' },
-  idle: { text: 'Local only', tone: '' },
+  pending: { text: 'Changes not synced yet', tone: 'fb-pill--error' },
+  offline: { text: 'Not synced', tone: 'fb-pill--error' },
+  idle: { text: 'Not synced', tone: '' },
 };
 
 /**
@@ -142,6 +143,17 @@ const AccountPage = function ({ user, syncStatus = 'idle', onForceSync, onLogout
             <p className="fb-card__desc" style={{ marginBottom: 0 }}>
               Your blocked sites, keywords and blocking schedule are saved to your account.
             </p>
+            {syncStatus === 'offline' && (
+              <p className="fb-card__desc" style={{ marginBottom: 0 }} role="alert">
+                Your account&apos;s settings couldn&apos;t be loaded. Focus Bear is using the copy saved on this
+                computer; nothing is written to your account until it has been read.
+              </p>
+            )}
+            {syncStatus === 'pending' && (
+              <p className="fb-card__desc" style={{ marginBottom: 0 }} role="alert">
+                A change you made here hasn&apos;t reached your account yet. Focus Bear keeps trying.
+              </p>
+            )}
           </div>
           <span className={`fb-pill ${status.tone}`} role="status">{status.text}</span>
         </div>

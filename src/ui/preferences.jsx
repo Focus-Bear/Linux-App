@@ -22,7 +22,7 @@ import AccountPage from './account';
 import SettingsUIPage from './settings-ui.jsx';
 import SettingsStrictnessPage from './settings-strictness.jsx';
 import SettingsAccessibilityPage from './settings-accessibility.jsx';
-import { useSyncedState } from '../services/sync.js';
+import { SYNC_TEXT, useSyncedState } from '../services/sync.js';
 import { musicStore } from '../services/musicStore.js';
 import { musicAction } from '../services/settingsModel.js';
 import { postponeStore } from '../services/postponeStore.js';
@@ -248,7 +248,11 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
     }
   };
 
-  const syncText = { synced: 'Synced', error: 'Sync error', syncing: 'Syncing…', loading: 'Syncing…' }[syncStatus] || 'Local only';
+  const syncText = SYNC_TEXT[syncStatus] || 'Not synced';
+  const syncHelp = {
+    offline: "Your account's settings couldn't be loaded. Focus Bear is using the copy saved on this computer and will try again.",
+    pending: "A change you made here hasn't reached your account yet. Focus Bear will keep trying.",
+  }[syncStatus];
 
   return (
     <div className="fb-shell">
@@ -266,7 +270,7 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
           user && (
             <>
               <div className="fb-sidebar__user" title={user.email || user.name}>{user.email || user.name}</div>
-              <div>{syncText}</div>
+              <div className={syncHelp ? 'fb-sidebar__sync fb-sidebar__sync--warn' : 'fb-sidebar__sync'} title={syncHelp} role="status">{syncText}</div>
             </>
           )
         }
