@@ -1,21 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import './styles/distracting-sites.css'; // shared .fb-input
 import './styles/tools.css';
 import { toolsApi } from '../services/toolsApi.js';
-import { sanitizeHtml } from './sanitizeHtml.js';
-import {
-  BRAIN_DUMP_TITLE,
-  DRAFT_PREFIX,
-  MAX_TITLE,
-  arrangeNotes,
-  isBrainDump,
-  isLocalNoteId,
-  isPinned,
-  noteDate,
-  noteError,
-  plainText,
-  preview,
-} from '../services/notesModel.js';
+import { READ_ONLY_NOTICE, createNotesStore } from '../services/notesStoreCore.js';
+import { inspectHtml, sanitizeHtml } from './sanitizeHtml.js';
+import { MAX_TITLE, isBrainDump, isPinned, noteDate, preview } from '../services/notesModel.js';
 
 const FORMATS = [
   { command: 'bold', label: 'B', title: 'Bold', style: { fontWeight: 700 } },
@@ -29,224 +18,52 @@ const FORMATS = [
  * TOOLS > Notes. The account's notes with the Brain Dump on top, like the
  * Windows Notes window (BrainDump/BrainDumpWindow.xaml): search, new note, pin,
  * delete, and an editor that saves as you type. Notes are stored as HTML, so
- * formatting made on another device is kept.
+ * formatting made on another device is kept; a note with formatting this
+ * editor can't keep opens read-only.
+ *
+ * This is only the view: which note is open, what was typed and when it is
+ * saved are the store's business (services/notesStoreCore.js).
  */
 export default function NotesPage() {
-  const [notes, setNotes] = useState([]);
-  const [status, setStatus] = useState('loading'); // loading | ready | error
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState(null); // search results, or null
-  const [selectedId, setSelectedId] = useState(null);
-  const [title, setTitle] = useState('');
-  const [saveState, setSaveState] = useState('idle'); // idle | dirty | saving | saved | error
-  const [message, setMessage] = useState(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [opened, setOpened] = useState(0); // goes up each time a note is put into the editor
+  const [store] = useState(() => createNotesStore({ api: toolsApi, inspect: inspectHtml }));
+  const state = useSyncExternalStore(store.subscribe, store.get);
+  const { status, shown, searching, hasMore, query, selectedId, note, title, readOnly, saveState, message, opened } = state;
+  // The "Delete this note" question belongs to the note it was asked about.
+  const [confirmFor, setConfirmFor] = useState(null);
+  const confirmDelete = confirmFor === opened;
   const editorRef = useRef(null);
-  const saveTimer = useRef(null);
-  // The note in the editor and whether it has unsaved edits, readable from timers.
-  const current = useRef({ note: null, dirty: false, title: '' });
 
-  const load = useCallback(async () => {
-    try {
-      const [first, pinned] = await Promise.all([toolsApi.getNotes(1), toolsApi.getPinnedNotes().catch(() => [])]);
-      setNotes([...pinned, ...first.notes]);
-      setHasMore(first.hasNextPage);
-      setPage(1);
-      setStatus('ready');
-    } catch (error) {
-      console.error('[Notes] Could not load the notes:', error);
-      setStatus('error');
-    }
-  }, []);
-
+  // Load on arrival; save what is open when the page (or the window) goes away.
   useEffect(() => {
-    load();
-  }, [load]);
-
-  const loadMore = async () => {
-    try {
-      const next = await toolsApi.getNotes(page + 1);
-      setNotes((prev) => [...prev, ...next.notes]);
-      setHasMore(next.hasNextPage);
-      setPage(page + 1);
-    } catch (error) {
-      console.error('[Notes] Could not load more notes:', error);
-      setMessage("Couldn't load more notes. Check your connection and try again.");
-    }
-  };
-
-  // Search as you type, a moment after the last key.
-  useEffect(() => {
-    const text = query.trim();
-    if (!text) {
-      setResults(null);
-      return undefined;
-    }
-    let cancelled = false;
-    const timer = setTimeout(async () => {
-      try {
-        const found = await toolsApi.searchNotes(text);
-        if (!cancelled) setResults(found);
-      } catch (error) {
-        console.error('[Notes] Search failed:', error);
-        if (!cancelled) setResults([]);
-      }
-    }, 300);
+    store.load();
+    const onUnload = () => store.close();
+    window.addEventListener('beforeunload', onUnload);
     return () => {
-      cancelled = true;
-      clearTimeout(timer);
+      window.removeEventListener('beforeunload', onUnload);
+      store.close();
     };
-  }, [query]);
-
-  const shown = useMemo(
-    () => (results ? arrangeNotes(results, { withBrainDump: false }) : arrangeNotes(notes)),
-    [notes, results],
-  );
-
-  /** Sends the editor's content if it changed. Returns the saved note (or null). */
-  const flush = useCallback(async () => {
-    clearTimeout(saveTimer.current);
-    const { note, dirty } = current.current;
-    if (!note || !dirty) return null;
-    const body = editorRef.current ? editorRef.current.innerHTML : note.body || '';
-    // A note without a title is named after its first words, as on Windows.
-    const noteTitle =
-      current.current.title.trim() || (isBrainDump(note) ? BRAIN_DUMP_TITLE : plainText(body).slice(0, 60).trim());
-    if (!noteTitle) {
-      // nothing written yet
-      current.current.dirty = false;
-      setSaveState('idle');
-      return null;
-    }
-    const problem = noteError(noteTitle, body);
-    if (problem) {
-      setSaveState('error');
-      setMessage(problem);
-      return null;
-    }
-    current.current.dirty = false;
-    setSaveState('saving');
-    try {
-      const saved = await toolsApi.saveNote(note, { title: noteTitle, body });
-      const merged = { ...note, ...(saved || {}), title: noteTitle, body };
-      setNotes((prev) => {
-        // A draft row is replaced by the note the server made of it.
-        const without = prev.filter((item) => item.id !== note.id && item.id !== merged.id);
-        return [merged, ...without];
-      });
-      if (current.current.note?.id === note.id) {
-        current.current.note = merged;
-        if (!current.current.title.trim()) {
-          current.current.title = noteTitle;
-          setTitle(noteTitle);
-        }
-        setSelectedId(merged.id);
-      }
-      setSaveState(current.current.dirty ? 'dirty' : 'saved');
-      setMessage(null);
-      return merged;
-    } catch (error) {
-      console.error('[Notes] Could not save the note:', error);
-      current.current.dirty = true;
-      setSaveState('error');
-      setMessage("Couldn't save this note. Check your connection; it will be tried again when you type.");
-      return null;
-    }
-  }, []);
-
-  const touch = () => {
-    current.current.dirty = true;
-    setSaveState('dirty');
-    clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(flush, 1200);
-  };
-
-  // Save what is open when the page is left.
-  useEffect(() => () => {
-    flush();
-  }, [flush]);
-
-  const open = async (note) => {
-    await flush();
-    current.current = { note, dirty: false, title: note.title || '' };
-    setSelectedId(note.id);
-    setTitle(note.title || '');
-    setSaveState('idle');
-    setMessage(null);
-    setConfirmDelete(false);
-    setOpened((count) => count + 1);
-  };
+  }, [store]);
 
   // Put the note's text into the editor when a note is opened (not after each
   // save: that would move the cursor).
   useEffect(() => {
-    if (editorRef.current && current.current.note) {
-      editorRef.current.innerHTML = sanitizeHtml(current.current.note.body || '');
-    }
-  }, [opened]);
+    if (editorRef.current && opened > 0) editorRef.current.innerHTML = sanitizeHtml(store.get().body);
+  }, [opened, store]);
 
-  const newNote = async () => {
-    await flush();
-    const draft = { id: `${DRAFT_PREFIX}${Date.now()}`, title: '', body: '', tags: [] };
-    setQuery('');
-    setNotes((prev) => [draft, ...prev]);
-    current.current = { note: draft, dirty: false, title: '' };
-    setSelectedId(draft.id);
-    setTitle('');
-    setSaveState('idle');
-    setMessage(null);
-    setConfirmDelete(false);
-    setOpened((count) => count + 1);
-  };
-
-  const togglePin = async () => {
-    const note = (await flush()) || current.current.note;
-    if (!note?.id || isLocalNoteId(note.id)) {
-      setMessage('Write something first: an empty note can\'t be pinned.');
-      return;
-    }
-    const pinned = !isPinned(note);
-    try {
-      const saved = await toolsApi.setNotePinned(note, pinned);
-      const merged = { ...note, pinned_at: saved?.pinned_at ?? (pinned ? new Date().toISOString() : null) };
-      current.current.note = merged;
-      setNotes((prev) => prev.map((item) => (item.id === note.id ? merged : item)));
-    } catch (error) {
-      console.error('[Notes] Could not pin the note:', error);
-      setMessage("Couldn't change the pin. Check your connection and try again.");
-    }
-  };
-
-  const remove = async () => {
-    const note = current.current.note;
-    clearTimeout(saveTimer.current);
-    current.current = { note: null, dirty: false, title: '' };
-    const id = note?.id;
-    setSelectedId(null);
-    setConfirmDelete(false);
-    setNotes((prev) => prev.filter((item) => item.id !== id));
-    setResults((prev) => (prev ? prev.filter((item) => item.id !== id) : prev));
-    if (!id || isLocalNoteId(id)) return;
-    try {
-      await toolsApi.deleteNote(id);
-    } catch (error) {
-      console.error('[Notes] Could not delete the note:', error);
-      setMessage("Couldn't delete that note. Check your connection and try again.");
-      load();
-    }
+  // Every key hands the store the editor's HTML, so a save never depends on
+  // this element still being on the page.
+  const typed = () => {
+    if (editorRef.current) store.edit({ body: editorRef.current.innerHTML });
   };
 
   const format = (command) => {
     editorRef.current?.focus();
     document.execCommand(command, false);
-    touch();
+    typed();
   };
 
-  const editing = current.current.note && selectedId !== null;
-  const brainDump = editing && isBrainDump(current.current.note);
+  const editing = Boolean(note);
+  const brainDump = editing && isBrainDump(note);
   const saveText = { dirty: 'Not saved yet', saving: 'Saving…', saved: 'Saved', error: 'Not saved' }[saveState] || '';
 
   return (
@@ -259,7 +76,7 @@ export default function NotesPage() {
         <section className="fb-card" role="alert">
           <h2 className="fb-card__title">Your notes couldn&apos;t be loaded</h2>
           <p className="fb-card__desc">Check your internet connection, then try again.</p>
-          <button type="button" className="fb-btn fb-btn--primary" onClick={load}>Try again</button>
+          <button type="button" className="fb-btn fb-btn--primary" onClick={() => store.load()}>Try again</button>
         </section>
       )}
 
@@ -271,37 +88,37 @@ export default function NotesPage() {
                 className="fb-input"
                 type="search"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => store.setQuery(e.target.value)}
                 placeholder="Search notes"
                 aria-label="Search notes"
               />
-              <button type="button" className="fb-btn fb-btn--primary" onClick={newNote}>+ New note</button>
+              <button type="button" className="fb-btn fb-btn--primary" onClick={() => store.newNote()}>+ New note</button>
             </div>
-            {results && shown.length === 0 && <p className="fb-tools__note">No notes match &quot;{query.trim()}&quot;.</p>}
+            {searching && shown.length === 0 && <p className="fb-tools__note">No notes match &quot;{query.trim()}&quot;.</p>}
             <ul className="fb-notes__rows">
-              {shown.map((note) => (
-                <li key={note.id}>
+              {shown.map((row) => (
+                <li key={row.id}>
                   <button
                     type="button"
                     className="fb-notes__row"
-                    aria-current={note.id === selectedId ? 'true' : undefined}
-                    onClick={() => open(note)}
+                    aria-current={row.id === selectedId ? 'true' : undefined}
+                    onClick={() => store.open(row.id)}
                   >
                     <span className="fb-notes__row-title">
-                      {isBrainDump(note) && <span aria-hidden="true">🧠 </span>}
-                      {!isBrainDump(note) && isPinned(note) && <span aria-hidden="true">📌 </span>}
-                      {note.title || 'New note'}
+                      {isBrainDump(row) && <span aria-hidden="true">🧠 </span>}
+                      {!isBrainDump(row) && isPinned(row) && <span aria-hidden="true">📌 </span>}
+                      {row.title || 'New note'}
                     </span>
                     <span className="fb-notes__row-preview">
-                      {preview(note) || (isBrainDump(note) ? 'Get distracting thoughts out of your head.' : 'Empty note')}
+                      {preview(row) || (isBrainDump(row) ? 'Get distracting thoughts out of your head.' : 'Empty note')}
                     </span>
-                    {noteDate(note) && <span className="fb-notes__row-date">{noteDate(note)}</span>}
+                    {noteDate(row) && <span className="fb-notes__row-date">{noteDate(row)}</span>}
                   </button>
                 </li>
               ))}
             </ul>
-            {!results && hasMore && (
-              <button type="button" className="fb-btn fb-btn--gray fb-btn--block" onClick={loadMore}>Show more notes</button>
+            {!searching && hasMore && (
+              <button type="button" className="fb-btn fb-btn--gray fb-btn--block" onClick={() => store.loadMore()}>Show more notes</button>
             )}
           </aside>
 
@@ -315,20 +132,17 @@ export default function NotesPage() {
                   <input
                     className="fb-input fb-notes__title"
                     value={title}
-                    onChange={(e) => {
-                      setTitle(e.target.value);
-                      current.current.title = e.target.value;
-                      touch();
-                    }}
+                    onChange={(e) => store.edit({ title: e.target.value })}
+                    onBlur={() => store.flush()}
                     placeholder="Title"
                     aria-label="Note title"
                     maxLength={MAX_TITLE}
-                    disabled={brainDump}
+                    disabled={brainDump || readOnly}
                   />
                   <span className="fb-notes__saved" role="status">{saveText}</span>
                 </div>
                 <div className="fb-notes__toolbar" role="toolbar" aria-label="Formatting">
-                  {FORMATS.map((item) => (
+                  {!readOnly && FORMATS.map((item) => (
                     <button
                       key={item.command}
                       type="button"
@@ -345,34 +159,36 @@ export default function NotesPage() {
                   <span className="fb-tools__spacer" />
                   {!brainDump && (
                     <>
-                      <button type="button" className="fb-btn fb-btn--small" onClick={togglePin}>
-                        {isPinned(current.current.note) ? 'Unpin' : 'Pin'}
+                      <button type="button" className="fb-btn fb-btn--small" onClick={() => store.togglePin()}>
+                        {isPinned(note) ? 'Unpin' : 'Pin'}
                       </button>
                       {!confirmDelete && (
-                        <button type="button" className="fb-btn fb-btn--gray fb-btn--small" onClick={() => setConfirmDelete(true)}>
+                        <button type="button" className="fb-btn fb-btn--gray fb-btn--small" onClick={() => setConfirmFor(opened)}>
                           Delete
                         </button>
                       )}
                       {confirmDelete && (
                         <>
-                          <button type="button" className="fb-btn fb-btn--danger fb-btn--small" onClick={remove}>Delete this note</button>
-                          <button type="button" className="fb-btn fb-btn--gray fb-btn--small" onClick={() => setConfirmDelete(false)}>Keep</button>
+                          <button type="button" className="fb-btn fb-btn--danger fb-btn--small" onClick={() => store.remove()}>Delete this note</button>
+                          <button type="button" className="fb-btn fb-btn--gray fb-btn--small" onClick={() => setConfirmFor(null)}>Keep</button>
                         </>
                       )}
                     </>
                   )}
                 </div>
+                {readOnly && <p className="fb-tools__note fb-notes__read-only" role="note">{READ_ONLY_NOTICE}</p>}
                 <div
                   ref={editorRef}
                   className="fb-notes__body"
-                  contentEditable
+                  contentEditable={!readOnly}
+                  aria-readonly={readOnly ? 'true' : undefined}
                   suppressContentEditableWarning
                   role="textbox"
                   aria-multiline="true"
                   aria-label="Note text"
                   data-placeholder={brainDump ? 'Type whatever is on your mind…' : 'Write your note…'}
-                  onInput={touch}
-                  onBlur={flush}
+                  onInput={typed}
+                  onBlur={() => store.flush()}
                 />
                 {message && <p className="fb-tools__error" role="alert">{message}</p>}
               </>

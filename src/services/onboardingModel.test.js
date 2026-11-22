@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { workListPlan } from './onboardingModel.js';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_DISTRACTIONS,
@@ -203,4 +204,32 @@ test('finishing saves the settings only for an account without habits', async ()
   const withHabits = recorder({ 'GET /user-settings': { break_after_minutes: 15, morning_activities: [{}] } });
   await createOnboardingApi({ request: withHabits.request, getDeviceId: async () => 'dev-1' }).finish();
   assert.equal(withHabits.calls.length, 1);
+});
+
+// --- the "work sites" step (review #163) -----------------------------------------
+
+const workList = (name, metadata, extra = {}) => ({ id: `id-${name}-${JSON.stringify(metadata).length}`, name, allowed_urls: [], metadata, ...extra });
+
+test('the work sites never go into a block list that happens to be called Work', () => {
+  const blockList = workList('Work', { isAllowedListApproach: false, blockUrlsArray: ['reddit.com', 'youtube.com'] });
+  const plan = workListPlan([blockList]);
+  assert.equal(plan.reuse, undefined, 'the block list is left alone');
+  assert.equal(plan.create, 'Work sites', 'a new allow list with a free name');
+});
+
+test('an allow list called Work is reused, whatever the case; a built-in list is not', () => {
+  const allow = workList('work', { isAllowedListApproach: true });
+  assert.equal(workListPlan([allow]).reuse, allow);
+  assert.deepEqual(workListPlan([]), { create: 'Work' });
+  assert.deepEqual(workListPlan(null), { create: 'Work' });
+  const builtIn = workList('Work', { isAllowedListApproach: true, isDeepWorkFocus: true });
+  assert.deepEqual(workListPlan([builtIn]), { create: 'Work sites' });
+});
+
+test('running the step twice does not create a third list', () => {
+  const blockList = workList('Work', { isAllowedListApproach: false });
+  const made = workList('Work sites', { isAllowedListApproach: true });
+  assert.equal(workListPlan([blockList, made]).reuse, made);
+  const blockToo = workList('Work sites', { isAllowedListApproach: false });
+  assert.deepEqual(workListPlan([blockList, blockToo]), { create: 'Work sites 2' });
 });

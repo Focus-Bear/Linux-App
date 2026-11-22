@@ -16,6 +16,17 @@ export const ALLOW_ONLY_LIFETIME_MS = 3 * 60 * 1000;
 
 export const DEFAULT_BLOCK_SETTINGS = Object.freeze({ immediatelyBlock: false });
 
+/**
+ * Whether blocked sites are blocked outright (no "Unblock temporarily"): when
+ * "Immediately block" is ticked, or in Grizzly Bear mode. Grizzly is the
+ * account's kCuddlyModeEnabled = false, which in the Mac and Windows apps means
+ * exactly that: a blocked site can't be let through for a while. On Linux the
+ * setting used to change nothing about blocking.
+ */
+export function effectiveImmediateBlock(settings) {
+  return Boolean(settings && (settings.immediatelyBlock === true || settings.selectedBearMode === 'grizzly'));
+}
+
 /** Accepts anything (IPC payload, settings.json) and returns a clean settings object. */
 export function normaliseBlockSettings(input) {
   const settings = { immediatelyBlock: Boolean(input && input.immediatelyBlock === true) };

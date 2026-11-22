@@ -478,13 +478,28 @@ export function finishBody(session, { achievements = '', distractions = '' } = {
   };
 }
 
-/** The finished row to attach a reflection to, from GET /user/weekly-focus-block-summary. */
-export function findSummaryRow(rows, modeId) {
+/**
+ * The finished row to attach a reflection to, from GET /user/weekly-focus-block-summary:
+ * the row of this block list that started when this session started. Matching
+ * the block list alone picked the previous session's row whenever this one's
+ * finish had not reached the server.
+ */
+export function findSummaryRow(rows, modeId, startTime) {
   if (!Array.isArray(rows)) return null;
   return (
-    rows.find((row) => row && row.focus_mode && row.focus_mode.id === modeId && !(row.metadata && row.metadata.is_manual === true)) ||
-    null
+    rows.find((row) => {
+      if (!row || !row.focus_mode || row.focus_mode.id !== modeId) return false;
+      if (row.metadata && row.metadata.is_manual === true) return false;
+      const started = Date.parse(row.start_time);
+      return Number.isFinite(started) && Number.isFinite(startTime) && Math.abs(started - startTime) <= MINUTE;
+    }) || null
   );
+}
+
+/** Done can be pressed again this long after the last task was ticked off (a double click ticked off two). */
+export const DONE_QUIET_MS = 700;
+export function canFinishTask(lastFinishedAt, now) {
+  return !Number.isFinite(lastFinishedAt) || now - lastFinishedAt >= DONE_QUIET_MS;
 }
 
 /** Body of PATCH /user/weekly-focus-block-summary/{rowId}. Null when there is nothing to save. */

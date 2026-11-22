@@ -112,6 +112,15 @@ export function postponeLabel(minutes) {
   return `Postpone for ${minutes} minutes`;
 }
 
+/**
+ * Whether the break on screen stops the next one from coming up: only a break
+ * that is still being played does. A finished one is just a "Nice break"
+ * screen that was left open.
+ */
+export function blocksNextBreak(player) {
+  return Boolean(player) && player.phase !== 'finished';
+}
+
 export function normalisePostpone(value) {
   const minutes = Number(value);
   return POSTPONE_OPTIONS.includes(minutes) ? minutes : DEFAULT_POSTPONE_MINUTES;

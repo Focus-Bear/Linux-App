@@ -4,6 +4,7 @@ import './styles/blocking-schedule.css'; // .fb-option
 import './styles/blocking.css';
 import ListEditor from './list-editor.jsx';
 import { blockingStore } from '../services/blockingStore.js';
+import { LIST_LOCKED } from '../electron/blockingModel.js';
 import {
   MAX_LIST_NAME,
   entryError,
@@ -27,7 +28,7 @@ const KIND_LABEL = { default: 'Default', relax: 'Relax', allow: 'Allow List', bl
  * `blocking` is the shell's blocking state (see useBlocking.js).
  */
 export default function BlockListsPage({ blocking, onOpenDistractingSites }) {
-  const { status, modes, schedules, error, inForce } = blocking;
+  const { status, modes, schedules, error, inForce, locks } = blocking;
   const lists = visibleLists(modes);
   const [selectedId, setSelectedId] = useState(null);
   const [dialog, setDialog] = useState(null); // null | { type: 'create' | 'rename' | 'delete', ... }
@@ -64,6 +65,8 @@ export default function BlockListsPage({ blocking, onOpenDistractingSites }) {
   const entries = selected ? listEntries(selected) : [];
   const usedBy = selected ? schedules.filter((schedule) => schedule.focus_mode_id === selected.id) : [];
   const inUse = selected && inForce.mode?.id === selected.id;
+  // In use by a strict schedule or a Captain / Pawfessor session: read-only until that ends.
+  const locked = Boolean(selected && locks?.listIds?.has(selected.id));
 
   return (
     <div className="fb-page fb-blocking">
@@ -112,7 +115,7 @@ export default function BlockListsPage({ blocking, onOpenDistractingSites }) {
           <section className="fb-card" aria-label={`${selected.name} settings`}>
             <div className="fb-row fb-row--between fb-blocking__head">
               <h2 className="fb-card__title" style={{ margin: 0 }}>{selected.name}</h2>
-              {!isBuiltIn(selected) && (
+              {!isBuiltIn(selected) && !locked && (
                 <div className="fb-row">
                   <button
                     type="button"
@@ -139,6 +142,7 @@ export default function BlockListsPage({ blocking, onOpenDistractingSites }) {
                     key={value}
                     type="button"
                     aria-pressed={kind === value}
+                    disabled={locked}
                     onClick={() => blockingStore.setListKind(selected.id, value)}
                   >
                     {KIND_LABEL[value]}
@@ -148,12 +152,13 @@ export default function BlockListsPage({ blocking, onOpenDistractingSites }) {
             )}
 
             <p className="fb-card__desc" style={{ marginBottom: 0 }}>{listNotice(selected)}</p>
-            {inUse && (
+            {inUse && !locked && (
               <p className="fb-blocking__note">
                 In use now{inForce.source === 'schedule' ? ` by the schedule "${inForce.schedule.name}"` : ' by your focus session'}.
                 Changes apply straight away.
               </p>
             )}
+            {locked && <p className="fb-blocking__note" role="status">{LIST_LOCKED}</p>}
             {kind === 'default' && (
               <button type="button" className="fb-btn fb-blocking__gap" onClick={onOpenDistractingSites}>
                 Edit Super Distracting Sites
@@ -161,7 +166,20 @@ export default function BlockListsPage({ blocking, onOpenDistractingSites }) {
             )}
           </section>
 
-          {(kind === 'block' || kind === 'allow') && (
+          {(kind === 'block' || kind === 'allow') && locked && (
+            <section className="fb-card" aria-label={kind === 'allow' ? 'Allowed websites' : 'Blocked websites'}>
+              <h2 className="fb-card__title">{kind === 'allow' ? 'Allowed websites' : 'Blocked websites'}</h2>
+              {entries.length === 0 ? (
+                <p className="fb-card__desc">Nothing in this list.</p>
+              ) : (
+                <ul className="fb-blocking__readonly">
+                  {entries.map((entry) => <li key={entry}>{entry}</li>)}
+                </ul>
+              )}
+            </section>
+          )}
+
+          {(kind === 'block' || kind === 'allow') && !locked && (
             <ListEditor
               key={`${selected.id}-${kind}`}
               embedded

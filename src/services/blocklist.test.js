@@ -7,6 +7,7 @@ import {
   keywordError,
   keywordsOf,
   normaliseKeyword,
+  normaliseSite,
   parseDeviceSettings,
   removeFromView,
   siteError,
@@ -156,4 +157,25 @@ test('Breaks settings use the Windows keys and keep their defaults when the acco
     kBreakAutoStartEnabled: true,
   });
   assert.deepEqual(toDeviceSettings({ a: 1 }, {}), { a: 1 });
+});
+
+test('sites are saved lower case and without the scheme (review #150)', () => {
+  assert.equal(normaliseSite('  HTTPS://Facebook.com/Groups '), 'facebook.com/groups');
+  assert.deepEqual(addEntry(['x.com'], 'Facebook.com'), ['x.com', 'facebook.com']);
+  assert.deepEqual(addEntry(['x.com'], 'https://Reddit.com'), ['x.com', 'reddit.com']);
+  // The same site in another case, or with a scheme, is a duplicate.
+  assert.deepEqual(addEntry(['facebook.com'], 'FACEBOOK.com'), ['facebook.com']);
+  assert.deepEqual(addEntry(['facebook.com'], 'http://facebook.com'), ['facebook.com']);
+  assert.equal(siteError('Facebook.COM', ['facebook.com']), 'That site is already on your list.');
+  assert.equal(siteError('https://facebook.com', ['Facebook.com']), 'That site is already on your list.');
+  assert.equal(siteError('https://News.example', ['facebook.com']), null);
+  assert.equal(siteError('https://', []), 'Type a website first.');
+});
+
+test('keywords that are in almost every address are refused (review #150)', () => {
+  for (const keyword of ['com', 'www', 'http', 'https', ' HTTPS ']) {
+    assert.equal(keywordError(keyword, []), 'That word is in almost every web address. Pick a more specific keyword.');
+  }
+  assert.equal(keywordError('comic', []), null);
+  assert.equal(keywordError('news', []), null);
 });

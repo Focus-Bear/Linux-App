@@ -7,7 +7,7 @@
 // Pure functions only (no React, no fetch), covered by node --test.
 // Times of day are minutes since local midnight; dates are 'YYYY-MM-DD'.
 
-import { focusBlocks, habitQuestions, routineState } from './dayPlanExtras.js';
+import { customRoutineState, focusBlocks, habitQuestions, routineState } from './dayPlanExtras.js';
 
 export const DEFAULT_STARTUP = '05:15';
 export const DEFAULT_SHUTDOWN = '20:00';
@@ -153,10 +153,14 @@ function routineCard(kind, title, icon, activities, startMinutes, weekday, ids) 
  * Calendar events of the day as timeline cards. Accepts the fields the
  * calendar endpoints return for Google and Microsoft accounts.
  * Events that span the whole day and events that don't touch `day` are left out.
+ * A meeting that began before midnight and is still running starts the day at 00:00.
  */
 export function meetingCards(events, day) {
   const cards = [];
   const seen = new Set();
+  const [y, m, d] = String(day).split('-').map(Number);
+  const dayStart = new Date(y, m - 1, d);
+  const dayEnd = new Date(y, m - 1, d + 1);
   for (const event of Array.isArray(events) ? events : []) {
     if (!event) continue;
     const begins = event.event_begins || event.start?.dateTime;
@@ -165,12 +169,13 @@ export function meetingCards(events, day) {
     const startDate = new Date(begins);
     const endDate = new Date(ends);
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) continue;
-    if (dayKey(startDate) !== day) continue;
+    if (startDate >= dayEnd || endDate <= dayStart) continue;
     if (endDate - startDate >= 24 * 60 * 60 * 1000) continue;
     const id = event.external_id || event.id || `${begins}-${event.summary || event.subject || ''}`;
     if (seen.has(id)) continue; // the same meeting on two connected calendars
     seen.add(id);
-    const start = minutesOfDay(startDate);
+    const carriedOver = startDate < dayStart;
+    const start = carriedOver ? 0 : minutesOfDay(startDate);
     cards.push({
       kind: 'meeting',
       id: `meeting-${id}`,
@@ -179,7 +184,7 @@ export function meetingCards(events, day) {
       sourceId: event.id || null,
       icon: '📅',
       start,
-      end: start + (endDate - startDate) / 60000,
+      end: carriedOver ? (endDate - dayStart) / 60000 : start + (endDate - startDate) / 60000,
     });
   }
   return cards;
@@ -231,6 +236,8 @@ export function buildTimeline({
     const card = routineCard('custom', routine.name || 'Routine', '🔁', routine.standalone_activities, start, weekday, ids);
     if (!card) continue;
     card.id = `custom-${routine.id || routine.name}`;
+    // "Skip routine for today" on a custom routine: the progress lists it by its sequence id.
+    Object.assign(card, customRoutineState(progress, routine.activity_sequence_id || card.habits[0].sequenceId));
     const scheduledEnd = parseTime(routine.end_time);
     if (scheduledEnd !== null && scheduledEnd > start) card.end = Math.max(card.end, scheduledEnd);
     cards.push(card);
@@ -280,11 +287,41 @@ export function timeRange(item) {
 
 // --- tasks ------------------------------------------------------------------
 
-/** The calendar day a task belongs to: its planned day, else its due date. Null when it has neither. */
-export function taskDay(task) {
-  const value = (task && (task.planned_date || task.due_date)) || '';
-  const match = /^\d{4}-\d{2}-\d{2}/.exec(String(value));
-  return match ? match[0] : null;
+const PLAIN_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The calendar day a date from the to-do API means.
+ *
+ * `planned_date` is a plain 'YYYY-MM-DD' (a `date` column). `due_date` is a
+ * `timestamptz`, so it comes back as an instant ('2026-11-22T13:00:00.000Z'):
+ *   - exactly midnight UTC is a plain day the server widened (every app sends
+ *     a due date as 'YYYY-MM-DD'), so it is that day wherever this PC is;
+ *   - any other instant means the local day it falls on, as in the Windows app
+ *     (Core/ToDo/ToDoDates.cs): 13:00Z on the 22nd is the 23rd in Sydney.
+ *
+ * `toLocalDay` (Date -> 'YYYY-MM-DD') is passed in by tests to stand in for
+ * another timezone.
+ */
+export function dateDay(value, toLocalDay = dayKey) {
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (PLAIN_DAY.test(text)) return text;
+  if (!/^\d{4}-\d{2}-\d{2}T/.test(text)) return null;
+  const instant = new Date(text);
+  if (Number.isNaN(instant.getTime())) return null;
+  if (instant.getTime() % DAY_MS === 0) return instant.toISOString().slice(0, 10);
+  return toLocalDay(instant);
+}
+
+/**
+ * The calendar day a task belongs to: its due date, else its planned day (the
+ * Windows Day Plan files tasks by due date, because `planned_date` lags behind
+ * edits made elsewhere). Null when it has neither.
+ */
+export function taskDay(task, toLocalDay = dayKey) {
+  if (!task) return null;
+  return dateDay(task.due_date, toLocalDay) || dateDay(task.planned_date, toLocalDay);
 }
 
 export function isCompleted(task) {
@@ -295,22 +332,28 @@ export function isCompleted(task) {
  * "Tasks for today": tasks planned or due today, plus unfinished ones from
  * earlier days (overdue tasks move to today, as on Windows). Unfinished first,
  * most important quadrant first.
+ *
+ * `overrides` ({ taskId: true | false }) are the ticks made on this page that
+ * the loaded list doesn't show yet.
  */
-export function tasksForDay(tasks, day, today = day) {
+export function tasksForDay(tasks, day, today = day, { toLocalDay = dayKey, overrides = null } = {}) {
   const list = [];
   for (const task of Array.isArray(tasks) ? tasks : []) {
     if (!task || !task.id) continue;
-    const when = taskDay(task);
+    const when = taskDay(task, toLocalDay);
     if (!when || when > day) continue;
+    const completed = overrides && task.id in overrides ? Boolean(overrides[task.id]) : isCompleted(task);
     // Overdue tasks move to today only; another day shows just its own tasks.
-    if (when < day && (day !== today || isCompleted(task))) continue;
+    if (when < day && (day !== today || completed)) continue;
     list.push({
       id: task.id,
       title: task.title || 'Untitled task',
       details: task.details || '',
       quadrant: Number(task.eisenhower_quadrant) || 1,
       seconds: Math.max(0, Number(task.duration) || 0),
-      completed: isCompleted(task),
+      completed,
+      // What the task goes back to when it is un-ticked (IN_PROGRESS stays IN_PROGRESS).
+      openStatus: task.status && task.status !== 'COMPLETED' ? task.status : 'NOT_STARTED',
       overdue: when < day,
     });
   }
@@ -319,18 +362,37 @@ export function tasksForDay(tasks, day, today = day) {
   );
 }
 
+/**
+ * The ticks to keep showing after a reload: only those saved (or still being
+ * saved) after that reload was asked for, which it may not include yet. The
+ * rest are dropped so the list shows what the account says, for example a task
+ * that was re-opened on another device.
+ * `savedAt` is { taskId: time of the last save here, Infinity while it runs }.
+ */
+export function overridesAfterLoad(overrides, savedAt, loadStartedAt) {
+  const kept = {};
+  for (const [id, value] of Object.entries(overrides || {})) {
+    if ((savedAt?.[id] ?? 0) >= loadStartedAt) kept[id] = value;
+  }
+  return kept;
+}
+
 /** Seconds of work left in the list (completed tasks excluded). */
 export function remainingTaskSeconds(tasks) {
   return (tasks || []).reduce((sum, task) => (task.completed ? sum : sum + task.seconds), 0);
 }
 
-/** Body of PUT /to-do that ticks a task off (or back on). The API upserts, so title and quadrant go along. */
+/**
+ * Body of PUT /to-do that ticks a task off (or back on). The server requires a
+ * title and a quadrant on every PUT (CreateToDoDto), so the task's own go
+ * along. Un-ticking gives the task back the status it had.
+ */
 export function taskStatusBody(task, completed) {
   return {
     id: task.id,
     title: task.title,
     eisenhower_quadrant: task.quadrant || 1,
-    status: completed ? 'COMPLETED' : 'NOT_STARTED',
+    status: completed ? 'COMPLETED' : task.openStatus || 'NOT_STARTED',
   };
 }
 

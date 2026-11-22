@@ -199,6 +199,34 @@ export function mergeBlocked(current, offered, chosen) {
 
 export const WORK_LIST_NAME = 'Work';
 
+/**
+ * Where the "work sites" step puts its sites: { reuse: list } when the account
+ * already has an allow list called Work (any case), else { create: name } with
+ * a name no list has yet. A block list or a built-in list that happens to be
+ * called "Work" is never reused: the step used to write the work sites into
+ * it, replacing its blocked sites with sites that were then blocked.
+ * `lists` are the account's block lists (GET /user/focus-modes).
+ */
+export function workListPlan(lists) {
+  const all = (Array.isArray(lists) ? lists : []).filter((mode) => mode && typeof mode.name === 'string');
+  const named = (name) => all.filter((mode) => mode.name.trim().toLowerCase() === name.toLowerCase());
+  const isAllowList = (mode) => {
+    const m = mode.metadata && typeof mode.metadata === 'object' ? mode.metadata : {};
+    const builtIn = m.isDefault || m.isMeetings || m.isLockedFocus || m.isRelaxFocus || m.isDeepWorkFocus;
+    return m.isAllowedListApproach === true && !builtIn;
+  };
+  const reuse = named(WORK_LIST_NAME).find(isAllowList);
+  if (reuse) return { reuse };
+  if (named(WORK_LIST_NAME).length === 0) return { create: WORK_LIST_NAME };
+  for (const name of ['Work sites', ...Array.from({ length: 20 }, (_, i) => `Work sites ${i + 2}`)]) {
+    const taken = named(name);
+    const again = taken.find(isAllowList);
+    if (again) return { reuse: again };
+    if (taken.length === 0) return { create: name };
+  }
+  return { create: `Work sites ${Date.now()}` };
+}
+
 // --- habits ---------------------------------------------------------------------
 
 /** Dashboard page ids (src/electron/webview-ids.js) for the two ways into the habit ideas page. */

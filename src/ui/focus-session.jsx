@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import './styles/distracting-sites.css'; // shared .fb-input and .fb-dialog
 import './styles/focus-session.css';
 import { focusApi } from '../services/focusApi.js';
 import { toolsApi } from '../services/toolsApi.js';
+import { currentUserId, finishOutbox, flushFinishes } from '../services/finishOutbox.js';
 import { auth0Sync } from '../services/sync.js';
 import { dayKey, newTaskBody } from '../services/dayPlanModel.js';
 import {
@@ -11,6 +12,7 @@ import {
   MAX_QUEUE,
   STRICTNESS_LEVELS,
   activeTask,
+  canFinishTask,
   canPause,
   clockMs,
   completeTask,
@@ -23,8 +25,6 @@ import {
   formatDuration,
   formatLength,
   formatRange,
-  makeStopCode,
-  needsStopCode,
   parseLength,
   pickDefaultMode,
   playTask,
@@ -34,7 +34,6 @@ import {
   sessionTitle,
   startLabel,
   stepMinutes,
-  stopCodeMatches,
   stopDelaySeconds,
   strictnessLevel,
   totalMs,
@@ -240,7 +239,8 @@ function StartView({ blocking, onEditBlockLists }) {
   );
   const [goal, setGoal] = useState(() => prefill?.intention || '');
   const [tasks, setTasks] = useState([]);
-  const [modes, setModes] = useState(null); // null = loading
+  const [modes, setModes] = useState(null); // null = loading, or the load failed (see modesFailed)
+  const [modesFailed, setModesFailed] = useState(false);
   const [modeId, setModeId] = useState(() => prefill?.modeId || '');
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState(null);
@@ -261,8 +261,10 @@ function StartView({ blocking, onEditBlockLists }) {
         });
       })
       .catch((err) => {
-        console.error('[Focus] Could not load block lists:', err);
-        if (!cancelled) setModes([]);
+        // Not "the account has no block lists": Start reads them again, and
+        // creates the default list only after a read that worked.
+        console.error('[Focus] Could not load block lists:', err?.message || err);
+        if (!cancelled) setModesFailed(true);
       });
     return () => {
       cancelled = true;
@@ -303,7 +305,7 @@ function StartView({ blocking, onEditBlockLists }) {
     try {
       // An account that has never used another Focus Bear app has no block
       // lists yet; the default one is created the way the Windows app does it.
-      if (!mode) mode = await focusApi.ensureDefaultMode(modes || []);
+      if (!mode) mode = await focusApi.resolveMode({ modes, modeId });
       draft = createSession({
         modeId: mode.id,
         modeName: mode.name,
@@ -443,7 +445,8 @@ function StartView({ blocking, onEditBlockLists }) {
           onChange={(e) => setModeId(e.target.value)}
           disabled={modes === null}
         >
-          {modes === null && <option value="">Loading your block lists…</option>}
+          {modes === null && !modesFailed && <option value="">Loading your block lists…</option>}
+          {modes === null && modesFailed && <option value="">{DEFAULT_MODE_NAME}</option>}
           {modes !== null && options.length === 0 && <option value="">{DEFAULT_MODE_NAME}</option>}
           {options.map((option) => (
             <option key={option.id} value={option.id}>{option.name}</option>
@@ -457,6 +460,12 @@ function StartView({ blocking, onEditBlockLists }) {
           )}
         </p>
         {scheduleNote && <p className="fb-focus__help">{scheduleNote}</p>}
+        {modesFailed && (
+          <p className="fb-focus__help" role="status">
+            Your block lists couldn&apos;t be loaded. You can still start: Focus Bear tries again, and blocks your Super
+            Distracting Sites if it still can&apos;t reach your account.
+          </p>
+        )}
 
         {error && <p className="fb-focus__error" role="alert">{error}</p>}
 
@@ -464,7 +473,7 @@ function StartView({ blocking, onEditBlockLists }) {
           type="button"
           className="fb-btn fb-btn--primary fb-btn--block fb-focus__start"
           onClick={start}
-          disabled={starting || modes === null}
+          disabled={starting || (modes === null && !modesFailed)}
         >
           {starting ? 'Starting…' : untimed ? 'Start an untimed session' : startLabel(parseLength(lengthText) ?? minutes)}
         </button>
@@ -476,38 +485,76 @@ function StartView({ blocking, onEditBlockLists }) {
 // -------------------------------------------------------------- running ----
 
 /**
- * The dialog between pressing Pause / End Session and it happening.
- *   Junior    - a question (ending only; pausing is immediate)
+ * The dialog between pressing Pause / End Session / − 5 min and it happening.
+ *   Junior    - a question (ending only; pausing and − 5 are immediate)
  *   Captain   - a 15 second countdown that can be cancelled
- *   Pawfessor - random characters to type (ending only; there is no pause)
+ *   Pawfessor - random characters to type (ending only; there is no pause and no − 5)
+ * The wait and the characters come from the main process (requestStop), which
+ * refuses the action until they are satisfied: this dialog only shows them.
  */
-function StopDialog({ session, action, onConfirm, onCancel }) {
-  const delay = stopDelaySeconds(session);
-  const withCode = action === 'end' && needsStopCode(session);
-  const [left, setLeft] = useState(delay);
-  const [code] = useState(() => (withCode ? makeStopCode() : ''));
+function StopDialog({ action, onConfirm, onCancel }) {
+  // null while asking; then { ready } | { waitSeconds, readyAt } | { code } | { refused }
+  const [terms, setTerms] = useState(null);
+  const [left, setLeft] = useState(null);
   const [typed, setTyped] = useState('');
   const confirmed = useRef(false);
 
   useEffect(() => {
-    if (delay <= 0) return undefined;
-    const timer = setInterval(() => setLeft((value) => Math.max(0, value - 1)), 1000);
+    let cancelled = false;
+    window.api.focusSession
+      .requestStop(action)
+      .then((answer) => {
+        if (cancelled) return;
+        setTerms(answer || { refused: true });
+        if (answer?.readyAt) setLeft(Math.max(0, Math.ceil((answer.readyAt - Date.now()) / 1000)));
+      })
+      .catch(() => {
+        if (!cancelled) setTerms({ refused: true });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [action]);
+
+  const delay = terms?.waitSeconds || 0;
+  const withCode = Boolean(terms?.code);
+  const code = terms?.code || '';
+  const readyAt = terms?.readyAt || 0;
+
+  useEffect(() => {
+    if (!readyAt) return undefined;
+    const timer = setInterval(() => setLeft(Math.max(0, Math.ceil((readyAt - Date.now()) / 1000))), 250);
     return () => clearInterval(timer);
-  }, [delay]);
+  }, [readyAt]);
 
   // Captain: when the wait is over the pause or stop goes through by itself, as on Windows.
   useEffect(() => {
     if (delay > 0 && left === 0 && !confirmed.current) {
       confirmed.current = true;
-      onConfirm();
+      onConfirm('');
     }
   }, [delay, left, onConfirm]);
 
+  // Shortening a Junior session needs no question.
+  useEffect(() => {
+    if (terms?.ready && action !== 'end' && !confirmed.current) {
+      confirmed.current = true;
+      onConfirm('');
+    }
+  }, [terms, action, onConfirm]);
+
+  const cancel = () => {
+    window.api.focusSession.cancelStop?.();
+    onCancel();
+  };
+
   const ending = action === 'end';
-  const title = ending ? 'End session early?' : 'Pause the session?';
+  const title = ending ? 'End session early?' : action === 'reduce' ? 'Take 5 minutes off?' : 'Pause the session?';
+  const verb = ending ? 'ends' : action === 'reduce' ? 'gets 5 minutes shorter' : 'pauses';
+  if (!terms || (terms.ready && !ending)) return null;
 
   return (
-    <div className="fb-dialog-overlay" onClick={onCancel}>
+    <div className="fb-dialog-overlay" onClick={cancel}>
       <div
         className="fb-dialog"
         role="alertdialog"
@@ -516,7 +563,7 @@ function StopDialog({ session, action, onConfirm, onCancel }) {
         aria-describedby="focus-stop-text"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') onCancel();
+          if (e.key === 'Escape') cancel();
         }}
       >
         <div className="fb-dialog__header">
@@ -526,8 +573,7 @@ function StopDialog({ session, action, onConfirm, onCancel }) {
           {delay > 0 && (
             <>
               <p id="focus-stop-text" style={{ marginTop: 0 }}>
-                This is a Captain session. The session {ending ? 'ends' : 'pauses'} when the wait is over. Changed your
-                mind? Keep going.
+                This is a Captain session. The session {verb} when the wait is over. Changed your mind? Keep going.
               </p>
               <div className="fb-focus__countdown" role="timer" aria-live="polite">{left}</div>
             </>
@@ -550,24 +596,29 @@ function StopDialog({ session, action, onConfirm, onCancel }) {
               />
             </>
           )}
-          {delay <= 0 && !withCode && (
+          {terms.refused && (
+            <p id="focus-stop-text" style={{ margin: 0 }}>
+              This is a Pawfessor session: it can&apos;t be paused or made shorter.
+            </p>
+          )}
+          {delay <= 0 && !withCode && !terms.refused && (
             <p id="focus-stop-text" style={{ margin: 0 }}>
               A few more minutes could be the difference. Stick with it?
             </p>
           )}
         </div>
         <div className="fb-dialog__footer">
-          {delay <= 0 && (
+          {delay <= 0 && !terms.refused && (
             <button
               type="button"
               className="fb-btn fb-btn--gray"
-              onClick={onConfirm}
-              disabled={withCode && !stopCodeMatches(code, typed)}
+              onClick={() => onConfirm(typed.trim())}
+              disabled={withCode && typed.trim() !== code}
             >
               End session
             </button>
           )}
-          <button type="button" className="fb-btn fb-btn--primary" onClick={onCancel} autoFocus={!withCode}>
+          <button type="button" className="fb-btn fb-btn--primary" onClick={cancel} autoFocus={!withCode}>
             Keep going
           </button>
         </div>
@@ -577,7 +628,18 @@ function StopDialog({ session, action, onConfirm, onCancel }) {
 }
 
 function RunningView({ session, now, askMusic, onAnswerMusic }) {
-  const [stopAction, setStopAction] = useState(null); // null | 'end' | 'pause'
+  const [stopAction, setStopAction] = useState(null); // null | 'end' | 'pause' | 'reduce'
+  const [quitRefused, setQuitRefused] = useState(false);
+  const lastDone = useRef(NaN);
+  const [finishing, setFinishing] = useState(false);
+
+  // Tray > Quit during a Captain or Pawfessor session brings the person here.
+  useEffect(() => {
+    const off = window.api?.focusSession?.onQuitRefused?.(() => setQuitRefused(true));
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
   const [rememberMusic, setRememberMusic] = useState(false);
   const [taskError, setTaskError] = useState(null);
   const [dump, setDump] = useState('');
@@ -597,6 +659,11 @@ function RunningView({ session, now, askMusic, onAnswerMusic }) {
   };
 
   const adjust = (delta) => window.api.focusSession.adjust(delta).then(syncFinish);
+  // Taking time off is a way of stopping: a Captain session waits for it too.
+  const reduce = () => {
+    if (stopDelaySeconds(session) > 0) setStopAction('reduce');
+    else adjust(-5);
+  };
 
   const pauseOrResume = () => {
     if (paused) {
@@ -607,22 +674,31 @@ function RunningView({ session, now, askMusic, onAnswerMusic }) {
     else window.api.focusSession.pause();
   };
 
-  const confirmStop = () => {
+  const confirmStop = (code) => {
     const action = stopAction;
     setStopAction(null);
     if (action === 'pause') window.api.focusSession.pause();
-    else if (action === 'end') window.api.focusSession.end();
+    else if (action === 'reduce') adjust(-5);
+    else if (action === 'end') window.api.focusSession.end(typeof code === 'string' ? code : '');
   };
 
-  // Done on the current task: it is ticked off in the to-do list and the next one comes up.
+  // Done on the current task: it is ticked off in the to-do list and the next
+  // one comes up. The button then belongs to the next task, so a second click
+  // right after the first is ignored (a double click ticked off two tasks).
   const finishTask = async (task) => {
+    if (finishing || !canFinishTask(lastDone.current, Date.now())) return;
+    lastDone.current = Date.now();
+    setFinishing(true);
     setTaskError(null);
-    await window.api.focusSession.setTasks(completeTask(queue, task.id));
     try {
+      await window.api.focusSession.setTasks(completeTask(queue, task.id));
       await focusApi.completeTask(task);
     } catch (err) {
       console.error('[Focus] Could not tick the task off:', err);
       setTaskError(`"${task.title}" is done here, but couldn't be ticked off in your to-do list. Check your connection.`);
+    } finally {
+      lastDone.current = Date.now();
+      setTimeout(() => setFinishing(false), 700);
     }
   };
 
@@ -634,8 +710,9 @@ function RunningView({ session, now, askMusic, onAnswerMusic }) {
       setDump('');
       setDumpState('saved');
     } catch (err) {
-      console.error('[Focus] Could not save to the brain dump:', err);
-      setDumpState('error');
+      console.error('[Focus] Could not save to the brain dump:', err?.message || err);
+      // A full Brain Dump says so (nothing is cut off silently any more).
+      setDumpState(err?.code === 'NOTE_FULL' ? 'full' : 'error');
     }
   };
 
@@ -688,8 +765,8 @@ function RunningView({ session, now, askMusic, onAnswerMusic }) {
               <button
                 type="button"
                 className="fb-btn fb-btn--gray fb-btn--small"
-                onClick={() => adjust(-5)}
-                title="Take time off this session"
+                onClick={reduce}
+                title={session.strictness === 'pawfessor' ? "A Pawfessor session can't be made shorter" : 'Take time off this session'}
                 disabled={session.strictness === 'pawfessor'}
               >
                 − 5 min
@@ -719,7 +796,7 @@ function RunningView({ session, now, askMusic, onAnswerMusic }) {
                 <div className="fb-focus__current-label">Working on now</div>
                 <div className="fb-focus__current-title">{current.icon ? `${current.icon} ` : ''}{current.title}</div>
               </div>
-              <button type="button" className="fb-btn fb-btn--primary" onClick={() => finishTask(current)}>
+              <button type="button" className="fb-btn fb-btn--primary" onClick={() => finishTask(current)} disabled={finishing}>
                 ✓ Done
               </button>
             </div>
@@ -774,6 +851,11 @@ function RunningView({ session, now, askMusic, onAnswerMusic }) {
             Focus Bear couldn&apos;t reach your account when this session started, so it won&apos;t show in your stats.
           </p>
         )}
+        {quitRefused && (
+          <p className="fb-focus__error" role="alert">
+            Focus Bear can&apos;t be quit during a {level ? level.label : 'strict'} session. End the session first.
+          </p>
+        )}
         <div className="fb-row fb-focus__actions">
           {(canPause(session) || paused) && (
             <button type="button" className="fb-btn fb-btn--primary" onClick={pauseOrResume}>
@@ -808,12 +890,13 @@ function RunningView({ session, now, askMusic, onAnswerMusic }) {
           <span className="fb-focus__help" role="status" style={{ margin: 0 }}>
             {dumpState === 'saved' && 'Saved. You can read it later under Notes.'}
             {dumpState === 'error' && "Couldn't save that. Check your connection and try again."}
+            {dumpState === 'full' && 'Your Brain Dump is full. Open it under Notes and clear some text, then try again.'}
           </span>
         </div>
       </section>
 
       {stopAction && (
-        <StopDialog session={session} action={stopAction} onConfirm={confirmStop} onCancel={() => setStopAction(null)} />
+        <StopDialog key={stopAction} action={stopAction} onConfirm={confirmStop} onCancel={() => setStopAction(null)} />
       )}
     </div>
   );
@@ -826,6 +909,8 @@ function EndView({ session }) {
   const [stars, setStars] = useState(0);
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved | error
   const focused = elapsedMs(session, session.endedAt);
+  // True while this session's finish hasn't reached the server yet (offline when it ended).
+  const unsent = useSyncExternalStore(finishOutbox.subscribe, () => finishOutbox.has(session.startTime, currentUserId()));
   const canSave = session.synced && session.finishReported && (achievements.trim() || stars > 0) && saveState !== 'saving';
   const queue = Array.isArray(session.tasks) ? session.tasks : [];
   const finished = doneTasks(queue);
@@ -833,6 +918,15 @@ function EndView({ session }) {
   const save = async () => {
     setSaveState('saving');
     try {
+      // The reflection goes onto this session's row, so the session has to be
+      // on the server first.
+      if (finishOutbox.has(session.startTime, currentUserId())) {
+        await flushFinishes();
+        if (finishOutbox.has(session.startTime, currentUserId())) {
+          setSaveState('unsent');
+          return;
+        }
+      }
       const saved = await focusApi.saveReflection(session, { achievements, stars });
       setSaveState(saved ? 'saved' : 'error');
     } catch (err) {
@@ -943,6 +1037,8 @@ function EndView({ session }) {
           <span className="fb-focus__help" role="status" style={{ margin: 0 }}>
             {saveState === 'saved' && 'Saved to your focus history.'}
             {saveState === 'error' && "Couldn't save that. Check your connection and try again."}
+            {saveState === 'unsent' && "This session hasn't reached your account yet. Check your connection and try again."}
+            {saveState === 'idle' && session.synced && unsent && "This session hasn't reached your account yet. Focus Bear keeps trying."}
             {saveState === 'idle' && !session.synced && "This session wasn't synced, so there is nothing to attach a reflection to."}
           </span>
         </div>

@@ -15,12 +15,12 @@ export const BEAR_MODES = [
   {
     id: 'cuddly',
     label: 'Cuddly Bear',
-    text: 'Gentle. A new focus session starts on Junior: you can pause or stop it at any time.',
+    text: 'Gentle. A blocked site shows a page where you can unblock it for a few minutes. A new focus session is offered on Junior: pause or stop at any time.',
   },
   {
     id: 'grizzly',
     label: 'Grizzly Bear',
-    text: 'Strict. A new focus session starts on Pawfessor: no pausing, and stopping early takes typing a row of random characters.',
+    text: 'Strict. A blocked site is blocked outright, with no temporary unblock. A new focus session is offered on Pawfessor: no pausing, and stopping early takes typing a row of random characters.',
   },
 ];
 

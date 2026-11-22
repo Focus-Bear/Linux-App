@@ -2,20 +2,27 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  customRoutineState,
   dayLabel,
+  dayOffsetMinutes,
   defaultEventEnd,
   eventBody,
   eventError,
+  finishedPostponed,
   focusBlockNote,
   focusBlocks,
   habitQuestions,
   isPostponed,
+  nextPostponed,
+  parseQuantity,
   postponeEntry,
   postponeLabel,
   quantityAnswers,
   quantityError,
   readPostpone,
+  readPostponed,
   routineBody,
+  routineSequenceId,
   routineState,
   shiftDay,
 } from './dayPlanExtras.js';
@@ -151,6 +158,35 @@ test('answers must be numbers within the range; empty answers are left out', () 
   assert.deepEqual(quantityAnswers([question], { q1: '999' }), []);
 });
 
+test('an entry that is not a number is refused instead of being saved as "no answer"', () => {
+  const [question] = habitQuestions(SETTINGS.evening_activities[0]);
+  // A decimal comma is a number.
+  assert.equal(parseQuantity('1,5'), 1.5);
+  assert.equal(quantityError(question, '1,5'), null);
+  assert.deepEqual(quantityAnswers([question], { q1: '1,5' }), [{ question_id: 'q1', logged_value: 1.5 }]);
+  assert.equal(parseQuantity(' 12. '), 12);
+  assert.equal(parseQuantity('.5'), 0.5);
+  assert.equal(parseQuantity(''), null);
+  // These used to reach the model as '' (a number field hides them) and were saved without the quantity.
+  for (const typed of ['12-', '1,5,2', '1 000', '1e3', 'abc', '-', ',']) {
+    assert.equal(quantityError(question, typed), 'Type a number.', typed);
+    assert.deepEqual(quantityAnswers([question], { q1: typed }), [], typed);
+  }
+});
+
+test('the UTC offset sent for a day is that day\'s own, not today\'s', () => {
+  // A zone that is UTC+11 until the first Sunday of April and UTC+10 after it.
+  const seen = [];
+  const offsetOf = (date) => {
+    seen.push([date.getMonth() + 1, date.getDate(), date.getHours()]);
+    return date.getMonth() + 1 < 4 || (date.getMonth() + 1 === 4 && date.getDate() < 5) ? 660 : 600;
+  };
+  assert.equal(dayOffsetMinutes('2026-04-04', offsetOf), 660);
+  assert.equal(dayOffsetMinutes('2026-04-06', offsetOf), 600);
+  assert.deepEqual(seen, [[4, 4, 12], [4, 6, 12]], 'asked at noon of the day, clear of the change');
+  assert.equal(typeof dayOffsetMinutes('2026-11-21'), 'number');
+});
+
 test('answers go into the completed-activity body; without answers the field is absent', () => {
   const habit = { id: 'e1', sequenceId: 'seq-e' };
   const timing = { startMs: 0, finishMs: 1000, seconds: 1 };
@@ -172,6 +208,24 @@ test('a routine skipped for today is read from the progress, with its sequence i
   assert.deepEqual(routineBody(), { operating_system: 'Web', metadata: {} });
 });
 
+test('a custom routine is found in the progress by its sequence id', () => {
+  const progress = {
+    custom_routines: [{ sequence_id: 'seq-a', was_force_completed: true }, null, { sequence_id: 'seq-b', was_force_completed: false }],
+    standalone_routines: [{ sequence_id: 'seq-s', was_force_completed: true }],
+  };
+  assert.deepEqual(customRoutineState(progress, 'seq-a'), { sequenceId: 'seq-a', cancelled: true });
+  assert.deepEqual(customRoutineState(progress, 'seq-b'), { sequenceId: 'seq-b', cancelled: false });
+  assert.deepEqual(customRoutineState(progress, 'seq-s'), { sequenceId: 'seq-s', cancelled: true });
+  assert.deepEqual(customRoutineState(progress, 'seq-none'), { sequenceId: 'seq-none', cancelled: false });
+  assert.deepEqual(customRoutineState(null, 'seq-a'), { sequenceId: 'seq-a', cancelled: false });
+  assert.deepEqual(customRoutineState(progress, ''), { sequenceId: '', cancelled: false });
+  // "Skip routine for today" is only offered when the id for the call is known.
+  assert.equal(routineSequenceId({ sequenceId: 'seq-a', habits: [{ sequenceId: 'x' }] }), 'seq-a');
+  assert.equal(routineSequenceId({ sequenceId: '', habits: [{ sequenceId: 'seq-h' }] }), 'seq-h');
+  assert.equal(routineSequenceId({ sequenceId: '', habits: [{ sequenceId: '' }] }), '');
+  assert.equal(routineSequenceId(null), '');
+});
+
 test('postponing remembers the routine until the time comes, for today only', () => {
   const now = new Date(2026, 10, 21, 9, 0).getTime();
   const entry = postponeEntry({ id: 'morning', title: 'Morning routine habits' }, 30, now);
@@ -184,6 +238,35 @@ test('postponing remembers the routine until the time comes, for today only', ()
   assert.equal(readPostpone(JSON.stringify(entry), now + 24 * 3600000), null);
   assert.equal(readPostpone('{broken', now), null);
   assert.equal(readPostpone(null, now), null);
+});
+
+test('each routine has its own postponement; one that is finished needs no reminder', () => {
+  const now = new Date(2026, 10, 21, 9, 0).getTime();
+  const morning = postponeEntry({ id: 'morning', title: 'Morning routine habits' }, 60, now);
+  const custom = postponeEntry({ id: 'custom-c1', title: 'Lunch reset' }, 15, now);
+  const stored = JSON.stringify({ morning, 'custom-c1': custom });
+  const entries = readPostponed(stored, now);
+  assert.deepEqual(entries, { morning, 'custom-c1': custom }, 'postponing one routine keeps the other');
+  assert.equal(isPostponed(entries.morning, 'morning', now), true);
+  assert.equal(isPostponed(entries.evening, 'evening', now), false);
+  assert.deepEqual(nextPostponed(entries), custom, 'the reminder that comes first');
+  assert.equal(nextPostponed({}), null);
+  // Yesterday's entries, broken ones and the single entry older versions stored.
+  assert.deepEqual(readPostponed(stored, now + 24 * 3600000), {});
+  assert.deepEqual(readPostponed(JSON.stringify({ morning, junk: { cardId: 'x' }, n: 5 }), now), { morning });
+  assert.deepEqual(readPostponed(JSON.stringify(morning), now), { morning });
+  assert.deepEqual(readPostponed('{broken', now), {});
+  assert.deepEqual(readPostponed(null, now), {});
+  // The morning routine was finished habit by habit: its reminder is dropped.
+  const cards = [
+    { id: 'morning', habits: [{}], allDone: true },
+    { id: 'custom-c1', habits: [{}], allDone: false },
+    { id: 'evening', habits: [{}], cancelled: true },
+    { id: 'meeting-1' },
+  ];
+  assert.deepEqual(finishedPostponed(cards, entries), ['morning']);
+  assert.deepEqual(finishedPostponed(cards, {}), []);
+  assert.deepEqual(finishedPostponed(null, entries), []);
 });
 
 // --- API ------------------------------------------------------------------------
@@ -202,14 +285,19 @@ test('events, routine skip and its undo use the Windows paths; a DELETE sends no
   await api.skipRoutine('seq-m');
   await api.undoSkipRoutine('seq-m');
   assert.deepEqual(calls.map((call) => call.line), [
+    // The day before and the day after are read too (see dayPlanApiCore.js getPlanEvents).
+    'GET /day-plan/events/day/2026-11-20',
+    'GET /day-plan/event-series/day/2026-11-20',
     `GET /day-plan/events/day/${DAY}`,
     `GET /day-plan/event-series/day/${DAY}`,
+    'GET /day-plan/events/day/2026-11-22',
+    'GET /day-plan/event-series/day/2026-11-22',
     'POST /day-plan/events',
     'DELETE /day-plan/events/e1',
     'POST /completed-activity-sequence/seq-m/force-complete-current-sequence?cancel_habits_for_today=true',
     'POST /completed-activity-sequence/seq-m/uncomplete',
   ]);
-  assert.equal('Content-Type' in calls[3].headers, false);
-  assert.equal(calls[2].headers['Content-Type'], 'application/json');
-  assert.deepEqual(calls[4].body, { operating_system: 'Web', metadata: {} });
+  assert.equal('Content-Type' in calls[7].headers, false);
+  assert.equal(calls[6].headers['Content-Type'], 'application/json');
+  assert.deepEqual(calls[8].body, { operating_system: 'Web', metadata: {} });
 });

@@ -21,6 +21,7 @@ import {
   STEPS,
   TERMS_URL,
   WORK_LIST_NAME,
+  workListPlan,
   cleanGoals,
   cleanSite,
   distractionChoices,
@@ -295,8 +296,9 @@ export default function OnboardingPage({ user, onFinish }) {
       const chosen = workSites.filter((site) => workChosen.has(site));
       if (chosen.length > 0) {
         const lists = await blockingApi.getLists();
-        const existing = lists.find((mode) => mode?.name === WORK_LIST_NAME);
-        const list = existing || (await blockingApi.createList(WORK_LIST_NAME, 'allow'));
+        // Only an allow list called Work is reused; a block list with that name is left alone.
+        const plan = workListPlan(lists);
+        const list = plan.reuse || (await blockingApi.createList(plan.create, 'allow'));
         // Only this list is sent, from a copy read just now (not every list of the account).
         await blockingApi.updateList(list.id, (fresh) => withEntries(fresh, [...(fresh.allowed_urls || []), ...chosen]));
       }

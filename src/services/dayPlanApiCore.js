@@ -8,10 +8,12 @@
 //   GET /calendar/{platform}/events?account=&day=                 that day's meetings
 //   GET /to-do?page=&take=50&order=DESC&sort_mode=DUE_DATE&exclude_completed=true   unfinished tasks
 //   PUT /to-do                                                    tick a task off, or add one
+//   GET /day-plan/events/day/{day}, /day-plan/event-series/day/{day}   your own events
+//   PATCH /user/timezone                                          the account's IANA timezone
 //
 // `fetch` and `getToken` are passed in, so this file can be tested with node --test.
 import { newTaskBody, taskStatusBody, timezoneParam } from './dayPlanModel.js';
-import { eventBody, routineBody } from './dayPlanExtras.js';
+import { eventBody, routineBody, shiftDay } from './dayPlanExtras.js';
 
 export const API_BASE_URL = 'https://api.focusbear.io';
 export const CALENDAR_PLATFORMS = ['google', 'microsoft'];
@@ -88,14 +90,40 @@ export function createDayPlanApi({ fetch, getToken, baseUrl = API_BASE_URL }) {
     return events;
   }
 
-  /** Events added in the Day Plan for `day`: one-off ones and the day's repeats of a series. */
+  /**
+   * Events added in the Day Plan around `day`: one-off ones and the repeats of
+   * a series, from the day before to the day after.
+   *
+   * The server cuts "the day" in the account's timezone (`iana_timezone`, else
+   * the offset a phone last synced, else UTC: day-plan.service.ts
+   * getEventsForDay), which need not be this PC's. In Sydney with an account on
+   * UTC, an 08:00 event is listed under the day before. So the neighbouring
+   * days are read too and the page keeps what falls on its own local day
+   * (meetingCards). A neighbour that fails is left out; the day itself must load.
+   */
   async function getPlanEvents(day) {
-    const [single, series] = await Promise.all([
-      request('GET', `/day-plan/events/day/${day}`),
-      request('GET', `/day-plan/event-series/day/${day}`).catch(() => null),
-    ]);
-    const list = (result) => (Array.isArray(result?.events) ? result.events : []);
-    return [...list(single), ...list(series).map((event) => ({ ...event, is_series: true }))];
+    const days = [shiftDay(day, -1), day, shiftDay(day, 1)];
+    const optional = (promise) => promise.catch(() => null);
+    const results = await Promise.all(
+      days.flatMap((each) => {
+        const single = request('GET', `/day-plan/events/day/${each}`);
+        return [each === day ? single : optional(single), optional(request('GET', `/day-plan/event-series/day/${each}`))];
+      }),
+    );
+    const events = [];
+    const seen = new Set();
+    results.forEach((result, index) => {
+      const isSeries = index % 2 === 1;
+      for (const event of Array.isArray(result?.events) ? result.events : []) {
+        if (!event) continue;
+        // An event that crosses midnight is listed under both days.
+        const key = event.id || event.occurrence_id || `${event.event_begins}-${event.summary || event.title || ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        events.push(isSeries ? { ...event, is_series: true } : event);
+      }
+    });
+    return events;
   }
 
   /** Every unfinished task, following the paging until the last page. */
@@ -161,6 +189,19 @@ export function createDayPlanApi({ fetch, getToken, baseUrl = API_BASE_URL }) {
         optional('tasks', getOpenTasks(), []),
       ]);
       return { day, settings, progress, events, planEvents, tasks, failed };
+    },
+
+    /**
+     * Tells the account its IANA timezone ('Australia/Sydney'), which the
+     * server prefers when it cuts a Day Plan day. Offsets and bare 'UTC' are
+     * refused by the server (UpdateUserTimezoneDto), so they aren't sent.
+     * Resolves false when nothing was sent.
+     */
+    async declareTimezone(name) {
+      const timezone = String(name ?? '').trim();
+      if (!timezone.includes('/')) return false;
+      await request('PATCH', '/user/timezone', { timezone });
+      return true;
     },
 
     setTaskCompleted(task, completed) {

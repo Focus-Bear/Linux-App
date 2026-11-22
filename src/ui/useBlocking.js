@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { blockingStore, useBlockingStore } from '../services/blockingStore.js';
-import { activeBlocking, effectiveBlocking } from '../electron/blockingModel.js';
+import { activeBlocking, blockingLocks, effectiveBlocking } from '../electron/blockingModel.js';
 import { isActive } from '../electron/focusSessionModel.js';
 
 const RELOAD_MS = 15 * 60 * 1000; // lists and schedules can change on another device
@@ -45,5 +45,15 @@ export function useBlocking(session) {
     return () => clearInterval(confirm);
   }, [key]);
 
-  return { ...store, inForce };
+  // What strict blocking in force forbids changing right now. The store
+  // refuses those changes too, whatever a page offers.
+  const locks = useMemo(
+    () => blockingLocks({ schedules, session, date: now }),
+    [schedules, session, now],
+  );
+  useEffect(() => {
+    blockingStore.setLocks(() => blockingLocks({ schedules: blockingStore.get().schedules, session, date: new Date() }));
+  }, [session]);
+
+  return { ...store, inForce, locks };
 }

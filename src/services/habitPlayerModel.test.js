@@ -1,9 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  bannerHabit,
   completionTiming,
   createPlayer,
   currentHabit,
+  dropQueued,
   elapsedMs,
   finishCurrent,
   finishedHeading,
@@ -172,4 +174,39 @@ test('the countdown rounds up and shows hours when needed', () => {
   assert.equal(formatCountdown(0), '00:00');
   assert.equal(formatCountdown(-5), '00:00');
   assert.equal(formatCountdown(3725 * SEC), '1:02:05');
+});
+
+test('between habits the banner names the next habit, not the one that just finished', () => {
+  const habits = ['a', 'b', 'c'].map((id) => ({ id, name: id, seconds: 60, requirements: '' }));
+  let player = createPlayer({ card: { id: 'morning', kind: 'morning', title: 'Morning', habits }, now: T0 });
+  assert.equal(bannerHabit(player).id, 'a');
+  player = finishCurrent(player, 'done', T0 + 60 * SEC);
+  assert.equal(player.phase, 'between');
+  assert.equal(currentHabit(player).id, 'a', 'the finished habit is still the current one');
+  assert.equal(bannerHabit(player).id, 'b');
+  player = startNext(player, T0 + 61 * SEC);
+  assert.equal(bannerHabit(player).id, 'b');
+  player = finishCurrent(skipNext(finishCurrent(player, 'done', T0 + 121 * SEC), T0 + 122 * SEC), 'done', T0 + 123 * SEC);
+  assert.equal(player.phase, 'finished');
+  assert.equal(bannerHabit(player), null);
+  assert.equal(bannerHabit(null), null);
+});
+
+test('a habit reported from its row leaves the queue; the one playing stays', () => {
+  const habits = ['a', 'b', 'c'].map((id) => ({ id, name: id, seconds: 60, requirements: '' }));
+  const start = createPlayer({ card: { id: 'morning', kind: 'morning', title: 'Morning', habits }, now: T0 });
+  const without = dropQueued(start, 'b');
+  assert.deepEqual(without.queue.map((habit) => habit.id), ['a', 'c']);
+  assert.equal(without.phase, 'running');
+  assert.equal(dropQueued(start, 'a'), start, 'the habit that is playing is the player\'s to report');
+  assert.equal(dropQueued(start, 'zzz'), start);
+  assert.equal(dropQueued(null, 'a'), null);
+  // Dropped habits no longer count as time to go.
+  assert.equal(playerTotals(without).leftSeconds, 120);
+  // Between habits: dropping the only one left ends the routine; dropping one of two does not.
+  const between = finishCurrent(start, 'done', T0 + 60 * SEC);
+  assert.equal(dropQueued(between, 'b').phase, 'between');
+  assert.equal(nextHabit(dropQueued(between, 'b')).id, 'c');
+  assert.equal(dropQueued(dropQueued(between, 'b'), 'c').phase, 'finished');
+  assert.equal(dropQueued(between, 'a'), between, 'the habit that just finished is already reported');
 });

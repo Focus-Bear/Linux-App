@@ -4,7 +4,7 @@ import WebViewHost from './WebViewHost.jsx';
 import Icon from './icons.jsx';
 import { DEFAULT_ITEM_ID, isNavigable, resolveDestination } from './navigation.js';
 import { useFocusSession } from './useFocusSession.js';
-import { clockMs, formatClock } from '../electron/focusSessionModel.js';
+import { clockMs, formatClock, hasStopFriction, strictnessLevel } from '../electron/focusSessionModel.js';
 import FocusSessionPage from './focus-session.jsx';
 import DayPlanPage from './day-plan.jsx';
 import SettingsFocusPage from './settings-focus.jsx';
@@ -240,7 +240,15 @@ const PreferencesPage = function ({ user, syncStatus, onForceSync, onLogout, ini
       case 'settings-about':
         return <SettingsAboutPage />;
       case 'settings-account':
-        return <AccountPage user={user} syncStatus={syncStatus} onForceSync={onForceSync} onLogout={onLogout} />;
+        return (
+          <AccountPage
+            user={user}
+            syncStatus={syncStatus}
+            onForceSync={onForceSync}
+            onLogout={onLogout}
+            sessionLock={focusActive && hasStopFriction(focus.session) ? strictnessLevel(focus.session.strictness)?.label || 'strict' : ''}
+          />
+        );
       case 'settings-uninstall':
         return <UninstallPage />;
       default:

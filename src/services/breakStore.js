@@ -20,7 +20,7 @@ import {
   remainingMs,
   startNext,
 } from './habitPlayerModel.js';
-import { breakHabits, breakSeconds, clampBreakMinutes, planBreak } from '../electron/breakModel.js';
+import { blocksNextBreak, breakHabits, breakSeconds, clampBreakMinutes, planBreak } from '../electron/breakModel.js';
 
 let state = {
   status: 'loading', // loading | ready | error
@@ -143,9 +143,20 @@ export const breakStore = {
     }
   },
 
-  /** The timer says a break is due (the reminder ran out or "Start micro break now"). */
+  /**
+   * The timer says a break is due (the reminder ran out or "Start micro break
+   * now"). A finished break still on screen ("Nice break", never closed with
+   * "Back to Day Plan") gives way: it used to stay, so the next break opened
+   * on the old finished screen with no way to start.
+   */
   markDue() {
-    if (!state.player) set({ due: true });
+    if (blocksNextBreak(state.player)) return;
+    set({ player: null, rotatedId: null, due: true });
+  },
+
+  /** The page was opened: a finished break from earlier is not shown again. */
+  dismissFinished() {
+    if (state.player && !blocksNextBreak(state.player)) set({ player: null, rotatedId: null });
   },
 
   /** Starts the planned break. False when there is nothing to play. */

@@ -53,7 +53,7 @@ Use the Focus Bear app to configure your block list. The app will automatically 
 │  (Focus Bear)   │
 └────────┬────────┘
          │ Unix Socket
-         │ /tmp/focusbear.sock
+         │ $XDG_RUNTIME_DIR/focusbear/focusbear.sock
          ▼
 ┌─────────────────────────────────┐
 │ Native Messaging Host           │
@@ -80,7 +80,7 @@ Use the Focus Bear app to configure your block list. The app will automatically 
 ### Check Native Host Logs
 
 ```bash
-tail -f /tmp/focusbear-native-host.log
+tail -f ~/.local/share/focusbear/run/native-host.log
 ```
 
 ### Check Extension Console

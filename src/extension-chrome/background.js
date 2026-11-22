@@ -1,6 +1,7 @@
 /**
  * Chrome MV3 service worker - native messaging + declarativeNetRequest blocking
  */
+/* global importScripts */
 
 let port = null;
 let blocklist = [];
@@ -10,7 +11,6 @@ let isConnectedToApp = false;
 // "Immediately block super distracting sites": no temporary unblocks while on.
 let immediatelyBlock = false;
 
-const WHITELIST_DURATION_MS = 30 * 60 * 1000;
 const NATIVE_HOST = 'com.focusbear.native_host';
 
 // Detect which Chromium-based browser we're in so Electron knows which process to kill.
@@ -29,150 +29,70 @@ function log(message) {
   console.log('[Focus Bear Extension]', message);
 }
 
-function escapeRegex(str) {
-  return str.replace(/[.+*?^${}()|[\]\\]/g, '\\$&');
-}
+// The matching rules (matching.js) and the rule building (dnr.js) are in their
+// own files, without chrome.* calls, so they can be tested.
+importScripts('matching.js', 'dnr.js');
 
-function stripProtocol(u) {
-  return u.replace(/^https?:\/\//, '');
+const M = self.FocusBearMatching;
+const Dnr = self.FocusBearDnr;
+
+// The block list as sent by the app, and the same list prepared for matching.
+let compiledBlocklist = [];
+function setBlocklist(list) {
+  blocklist = Array.isArray(list) ? list.filter(entry => typeof entry === 'string') : [];
+  compiledBlocklist = M.compileBlocklist(blocklist);
 }
 
 // Allow list in force (a focus session or blocking schedule that uses an
 // allow list): null, or the only sites that may be opened. Sent by the app in
-// BLOCK_SETTINGS_UPDATE. The rule matches src/electron/blockingModel.js
-// (matchesEntry): lower case, without scheme and "www.", the entry anywhere in
-// the URL, "*" as a wildcard.
+// BLOCK_SETTINGS_UPDATE. How an entry matches is in matching.js (matchesEntry):
+// in the host, or in host + path when the entry has a "/". Never in the query.
 let allowOnly = null;
 // The app renews the allow list every minute while it is in force. If the app
 // stops without saying so (crash, power cut), the allow list lapses at this
-// time instead of blocking the whole web until the app is next opened.
+// time instead of blocking the whole web until the app is next opened. Never
+// more than 3 minutes ahead, whatever was sent or stored (capAllowOnlyUntil).
 let allowOnlyUntil = 0;
 
-// Never blocked by an allow list: Focus Bear's own pages and sign-in.
-const ALWAYS_ALLOWED_HOSTS = ['focusbear.io', 'auth0.com', 'localhost', '127.0.0.1'];
-
-function readAllowOnly(value, until) {
-  allowOnlyUntil = Number(until) || 0;
-  if (!Array.isArray(value) || Date.now() > allowOnlyUntil) return null;
-  return value.filter(e => typeof e === 'string' && e.trim());
+function setAllowOnly(value, until) {
+  const read = M.readAllowOnly(value, until, Date.now());
+  allowOnly = read.allowOnly;
+  allowOnlyUntil = read.allowOnlyUntil;
 }
 
 function allowListInForce() {
+  // Capped every time it is read: a clock set back must not stretch it.
+  allowOnlyUntil = M.capAllowOnlyUntil(allowOnlyUntil, Date.now());
   return Boolean(allowOnly) && Date.now() <= allowOnlyUntil;
-}
-
-function normaliseEntry(entry) {
-  return String(entry).trim().toLowerCase()
-    .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
-}
-
-function matchesEntry(url, entry) {
-  const target = url.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');
-  const pattern = normaliseEntry(entry);
-  if (!pattern) return false;
-  if (!pattern.includes('*')) return target.includes(pattern);
-  const source = pattern.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-  try { return new RegExp(source).test(target); } catch { return false; }
 }
 
 // True when an allow list is in force and this page is not on it.
 function isOutsideAllowList(url) {
-  if (!allowListInForce() || !/^https?:\/\//i.test(url)) return false;
-  try {
-    const hostname = new URL(url).hostname;
-    if (ALWAYS_ALLOWED_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h))) return false;
-  } catch {
-    return false;
-  }
-  return !allowOnly.some(entry => matchesEntry(url, entry));
+  return allowListInForce() && M.isOutsideAllowList(url, allowOnly);
 }
 
 // ── DNR ──────────────────────────────────────────────────────────────────────
 
-async function updateDNRRules() {
-  const blockedPageBase = chrome.runtime.getURL('blocked.html');
-  const rules = [];
-  let id = 1;
+const regexSupported = Dnr.createRegexChecker(options => chrome.declarativeNetRequest.isRegexSupported(options));
+const dnrQueue = Dnr.createQueue();
 
-  // Priorities: temporary unblocks (4) beat the block list (3), which beats an
-  // allow list's sites (2), which beat its block-everything-else rule (1).
-  const activeWhitelist = immediatelyBlock ? [] : whitelist.filter(e => e.expiresAt > Date.now());
-  for (const entry of activeWhitelist) {
-    let regexFilter;
-    if (entry.type === 'domain') {
-      regexFilter = `^https?://(.*\\.)?${escapeRegex(entry.pattern)}(/.*)?$`;
-    } else {
-      regexFilter = `^${escapeRegex(stripProtocol(entry.pattern))}$`;
+// One update at a time: the app sends BLOCKLIST_UPDATE and
+// BLOCK_SETTINGS_UPDATE back to back, and two updates at once collide.
+function updateDNRRules() {
+  return dnrQueue(async () => {
+    try {
+      const plan = await Dnr.buildRules(
+        { blocklist, whitelist, allowOnly: allowListInForce() ? allowOnly : null, immediatelyBlock, now: Date.now() },
+        { blockedPageBase: chrome.runtime.getURL('blocked.html'), supported: regexSupported }
+      );
+      const result = await Dnr.applyRules(chrome.declarativeNetRequest, plan, log);
+      log(`DNR updated: ${plan.dynamic.length} block list rules${result.dynamicOk ? '' : ' (refused)'}, ` +
+        `${plan.session.length} allow list rules${result.sessionOk ? '' : ' (refused)'}, ` +
+        `${plan.skipped} entries Chrome does not support, ${plan.dropped} over the limit`);
+    } catch (err) {
+      log('DNR update failed: ' + err.message);
     }
-    rules.push({
-      id: id++,
-      priority: 4,
-      action: { type: 'allow' },
-      condition: { regexFilter, resourceTypes: ['main_frame', 'sub_frame'] }
-    });
-  }
-
-  // All rules use regexFilter so \0 in regexSubstitution = full matched URL
-  const MAX_RULES = 1000 - activeWhitelist.length;
-  for (const pattern of blocklist.slice(0, MAX_RULES)) {
-    const isRegex = pattern.includes('.*') || pattern.includes('\\');
-    const core = isRegex ? pattern : escapeRegex(pattern);
-    const reason = isRegex ? 'regex' : 'domain';
-    rules.push({
-      id: id++,
-      priority: 3,
-      action: {
-        type: 'redirect',
-        redirect: {
-          // URL goes into hash — avoids query-string encoding issues with & in URLs
-          regexSubstitution: `${blockedPageBase}#\\0`
-        }
-      },
-      condition: {
-        regexFilter: `.*${core}.*`,
-        resourceTypes: ['main_frame']
-      }
-    });
-    void reason;
-  }
-
-  // An allow list is in force: its sites and Focus Bear's own pages open, every
-  // other page goes to the block page.
-  if (allowListInForce()) {
-    const allowed = [
-      ...ALWAYS_ALLOWED_HOSTS.map(host => `^https?://([^/]*\\.)?${escapeRegex(host)}(:[0-9]+)?(/.*)?$`),
-      ...allowOnly.slice(0, 500).map(normaliseEntry).filter(Boolean)
-        .map(entry => `.*${entry.split('*').map(escapeRegex).join('.*')}.*`),
-    ];
-    for (const regexFilter of allowed) {
-      rules.push({
-        id: id++,
-        priority: 2,
-        action: { type: 'allow' },
-        condition: { regexFilter, isUrlFilterCaseSensitive: false, resourceTypes: ['main_frame'] }
-      });
-    }
-    rules.push({
-      id: id++,
-      priority: 1,
-      action: {
-        type: 'redirect',
-        redirect: { regexSubstitution: `${blockedPageBase}?reason=allow_list#\\0` }
-      },
-      condition: { regexFilter: '^https?://.*', resourceTypes: ['main_frame'] }
-    });
-  }
-
-  try {
-    const existing = await chrome.declarativeNetRequest.getDynamicRules();
-    await chrome.declarativeNetRequest.updateDynamicRules({
-      removeRuleIds: existing.map(r => r.id),
-      addRules: rules
-    });
-    log(`DNR updated: ${rules.length} rules (${activeWhitelist.length} allow, ${rules.length - activeWhitelist.length} block)`);
-  } catch (err) {
-    log('DNR update failed: ' + err.message);
-  }
+  });
 }
 
 // ── Whitelist ─────────────────────────────────────────────────────────────────
@@ -188,17 +108,7 @@ function pruneWhitelist() {
 
 function isWhitelistedUrl(url) {
   if (immediatelyBlock) return false;
-  const active = whitelist.filter(e => e.expiresAt > Date.now());
-  for (const entry of active) {
-    try {
-      if (entry.type === 'exact' && url.replace(/^https?:\/\//, '') === entry.pattern.replace(/^https?:\/\//, '')) return true;
-      if (entry.type === 'domain') {
-        const hostname = new URL(url).hostname;
-        if (hostname === entry.pattern || hostname.endsWith('.' + entry.pattern)) return true;
-      }
-    } catch {}
-  }
-  return false;
+  return M.isWhitelisted(url, whitelist, Date.now());
 }
 
 async function maybeBlockTab(tabId, url) {
@@ -210,11 +120,22 @@ async function maybeBlockTab(tabId, url) {
   await chrome.tabs.update(tabId, { url: page + '#' + url }).catch(() => {});
 }
 
+// Every tab, not only the one in front: a site open in another window (or
+// playing in a background tab) must not stay usable after the rules change.
+async function recheckAllTabs() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    for (const tab of tabs) {
+      if (tab.url) await maybeBlockTab(tab.id, tab.url);
+    }
+  } catch { /* no tabs to check */ }
+}
+
 chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await chrome.tabs.get(tabId);
     if (tab.url) await maybeBlockTab(tabId, tab.url);
-  } catch {}
+  } catch { /* the tab is gone */ }
 });
 
 function notifyWhitelistUpdate() {
@@ -239,27 +160,23 @@ function connectToNativeHost() {
       switch (message.type) {
         case 'BLOCKLIST_RESPONSE':
         case 'BLOCKLIST_UPDATE':
-          blocklist = message.data || [];
+          setBlocklist(message.data);
           chrome.storage.local.set({ blocklist, lastUpdate: message.timestamp });
           updateDNRRules();
-          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.url) maybeBlockTab(tabs[0].id, tabs[0].url).catch(() => {});
-          });
+          recheckAllTabs();
           break;
 
         case 'BLOCK_SETTINGS_UPDATE':
           immediatelyBlock = message.data?.immediatelyBlock === true;
-          allowOnly = readAllowOnly(message.data?.allowOnly, message.data?.allowOnlyUntil);
+          setAllowOnly(message.data?.allowOnly, message.data?.allowOnlyUntil);
           chrome.storage.local.set({ immediatelyBlock, allowOnly, allowOnlyUntil });
           updateDNRRules();
-          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-            if (tabs[0]?.url) maybeBlockTab(tabs[0].id, tabs[0].url).catch(() => {});
-          });
+          recheckAllTabs();
           break;
 
         case 'WHITELIST_RESPONSE':
         case 'WHITELIST_UPDATE':
-          whitelist = (message.data || []).filter(e => e.expiresAt > Date.now());
+          whitelist = M.readWhitelist(message.data, Date.now());
           chrome.storage.local.set({ whitelist });
           updateDNRRules();
           break;
@@ -300,9 +217,10 @@ function connectToNativeHost() {
 async function restoreState() {
   const result = await chrome.storage.local.get(['blocklist', 'whitelist', 'immediatelyBlock', 'allowOnly', 'allowOnlyUntil']);
   immediatelyBlock = result.immediatelyBlock === true;
-  allowOnly = readAllowOnly(result.allowOnly, result.allowOnlyUntil);
-  blocklist = result.blocklist || [];
-  whitelist = (result.whitelist || []).filter(e => e.expiresAt > Date.now());
+  setAllowOnly(result.allowOnly, result.allowOnlyUntil);
+  setBlocklist(result.blocklist);
+  whitelist = M.readWhitelist(result.whitelist, Date.now());
+  // Also removes allow-list rules an older version left in the dynamic rules.
   await updateDNRRules();
 }
 
@@ -355,13 +273,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 function isBlockedByList(url) {
-  return blocklist.some(pattern => {
-    if (url.includes(pattern)) return true;
-    try {
-      const hostname = new URL(url).hostname;
-      return hostname === pattern || hostname.endsWith('.' + pattern);
-    } catch { return false; }
-  });
+  return Boolean(M.findBlocked(url, compiledBlocklist));
 }
 
 // ── Message handler (popup / blocked page) ────────────────────────────────────
@@ -385,10 +297,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: false, error: 'Immediate blocking is on' });
 
   } else if (message.type === 'ADD_WHITELIST') {
-    const durationMs = message.durationMs || WHITELIST_DURATION_MS;
-    const entry = { pattern: message.pattern, type: message.patternType, expiresAt: Date.now() + durationMs };
-    whitelist = pruneWhitelist().filter(e => e.pattern !== message.pattern);
-    whitelist.push(entry);
+    // Never longer than the block page offers (90 minutes).
+    const entry = { pattern: message.pattern, type: message.patternType, expiresAt: Date.now() + M.unblockDuration(message.durationMs) };
+    whitelist = M.readWhitelist([...pruneWhitelist().filter(e => e.pattern !== message.pattern), entry], Date.now());
     chrome.storage.local.set({ whitelist });
     notifyWhitelistUpdate();
     updateDNRRules();

@@ -6,56 +6,44 @@ let isConnectedToApp = false;
 // "Immediately block super distracting sites": no temporary unblocks while on.
 let immediatelyBlock = false;
 
-const WHITELIST_DURATION_MS = 30 * 60 * 1000;
+// The matching rules are in matching.js (loaded before this file, see the
+// manifest), without browser.* calls, so they can be tested.
+const M = self.FocusBearMatching;
+
+// The block list as sent by the app, and the same list prepared for matching
+// (lower case, without scheme; "com", "www", "http" and "https" block nothing).
+let compiledBlocklist = [];
+function setBlocklist(list) {
+  blocklist = Array.isArray(list) ? list.filter(entry => typeof entry === 'string') : [];
+  compiledBlocklist = M.compileBlocklist(blocklist);
+}
 
 // Allow list in force (a focus session or blocking schedule that uses an
 // allow list): null, or the only sites that may be opened. Sent by the app in
-// BLOCK_SETTINGS_UPDATE. The rule matches src/electron/blockingModel.js
-// (matchesEntry): lower case, without scheme and "www.", the entry anywhere in
-// the URL, "*" as a wildcard.
+// BLOCK_SETTINGS_UPDATE. How an entry matches is in matching.js (matchesEntry):
+// in the host, or in host + path when the entry has a "/". Never in the query.
 let allowOnly = null;
 // The app renews the allow list every minute while it is in force. If the app
 // stops without saying so (crash, power cut), the allow list lapses at this
-// time instead of blocking the whole web until the app is next opened.
+// time instead of blocking the whole web until the app is next opened. Never
+// more than 3 minutes ahead, whatever was sent or stored (capAllowOnlyUntil).
 let allowOnlyUntil = 0;
 
-// Never blocked by an allow list: Focus Bear's own pages and sign-in.
-const ALWAYS_ALLOWED_HOSTS = ['focusbear.io', 'auth0.com', 'localhost', '127.0.0.1'];
-
-function readAllowOnly(value, until) {
-  allowOnlyUntil = Number(until) || 0;
-  if (!Array.isArray(value) || Date.now() > allowOnlyUntil) return null;
-  return value.filter(e => typeof e === 'string' && e.trim());
+function setAllowOnly(value, until) {
+  const read = M.readAllowOnly(value, until, Date.now());
+  allowOnly = read.allowOnly;
+  allowOnlyUntil = read.allowOnlyUntil;
 }
 
 function allowListInForce() {
+  // Capped every time it is read: a clock set back must not stretch it.
+  allowOnlyUntil = M.capAllowOnlyUntil(allowOnlyUntil, Date.now());
   return Boolean(allowOnly) && Date.now() <= allowOnlyUntil;
-}
-
-function normaliseEntry(entry) {
-  return String(entry).trim().toLowerCase()
-    .replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '');
-}
-
-function matchesEntry(url, entry) {
-  const target = url.toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '');
-  const pattern = normaliseEntry(entry);
-  if (!pattern) return false;
-  if (!pattern.includes('*')) return target.includes(pattern);
-  const source = pattern.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
-  try { return new RegExp(source).test(target); } catch { return false; }
 }
 
 // True when an allow list is in force and this page is not on it.
 function isOutsideAllowList(url) {
-  if (!allowListInForce() || !/^https?:\/\//i.test(url)) return false;
-  try {
-    const hostname = new URL(url).hostname;
-    if (ALWAYS_ALLOWED_HOSTS.some(h => hostname === h || hostname.endsWith('.' + h))) return false;
-  } catch {
-    return false;
-  }
-  return !allowOnly.some(entry => matchesEntry(url, entry));
+  return allowListInForce() && M.isOutsideAllowList(url, allowOnly);
 }
 
 // Sent in every PING so Electron knows which browser to kill if extension goes missing.
@@ -67,10 +55,10 @@ const BROWSER_ID = (() => {
 
 browser.storage.local.get(['whitelist', 'blocklist', 'immediatelyBlock', 'allowOnly', 'allowOnlyUntil']).then(result => {
   immediatelyBlock = result.immediatelyBlock === true;
-  allowOnly = readAllowOnly(result.allowOnly, result.allowOnlyUntil);
-  whitelist = (result.whitelist || []).filter(e => e.expiresAt > Date.now());
+  setAllowOnly(result.allowOnly, result.allowOnlyUntil);
+  whitelist = M.readWhitelist(result.whitelist, Date.now());
   browser.storage.local.set({ whitelist });
-  blocklist = result.blocklist || [];
+  setBlocklist(result.blocklist);
 });
 
 function pruneWhitelist() {
@@ -82,38 +70,16 @@ function pruneWhitelist() {
   return whitelist;
 }
 
-const stripProtocol = u => u.replace(/^https?:\/\//, '');
+const stripProtocol = M.stripProtocol;
 
 function isWhitelisted(url) {
   if (immediatelyBlock) return false;
   pruneWhitelist();
-  for (const entry of whitelist) {
-    if (entry.type === 'exact' && stripProtocol(url) === stripProtocol(entry.pattern)) return true;
-    if (entry.type === 'domain') {
-      try {
-        const hostname = new URL(url).hostname;
-        if (hostname === entry.pattern || hostname.endsWith('.' + entry.pattern)) return true;
-      } catch (e) {}
-    }
-  }
-  return false;
+  return M.isWhitelisted(url, whitelist, Date.now());
 }
 
 function isBlockedUrl(url) {
-  for (const pattern of blocklist) {
-    try {
-      if (url.includes(pattern)) return true;
-      if (pattern.includes('.*') || pattern.includes('\\')) {
-        try { if (new RegExp(pattern, 'i').test(url)) return true; } catch (e) {}
-      }
-      try {
-        const hostname = new URL(url).hostname;
-        if (hostname === pattern || hostname.endsWith('.' + pattern) ||
-            (pattern.startsWith('.') && hostname.endsWith(pattern))) return true;
-      } catch (e) {}
-    } catch (e) {}
-  }
-  return false;
+  return Boolean(M.findBlocked(url, compiledBlocklist));
 }
 
 function maybeBlockTab(tabId, url) {
@@ -127,11 +93,22 @@ function maybeBlockTab(tabId, url) {
   browser.tabs.update(tabId, { url: blockPageUrl }).catch(() => {});
 }
 
+// Every tab, not only the one in front: a site open in another window (or
+// playing in a background tab) must not stay usable after the rules change,
+// for example when "Immediately block" is switched on.
+function recheckAllTabs() {
+  browser.tabs.query({}).then(tabs => {
+    for (const tab of tabs) {
+      if (tab.url) maybeBlockTab(tab.id, tab.url);
+    }
+  }).catch(() => {});
+}
+
 browser.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
     const tab = await browser.tabs.get(tabId);
     if (tab.url) maybeBlockTab(tabId, tab.url);
-  } catch (e) {}
+  } catch { /* the tab is gone */ }
 });
 
 function notifyWhitelistUpdate() {
@@ -160,28 +137,24 @@ function connectToNativeHost() {
       switch (message.type) {
         case 'BLOCKLIST_RESPONSE':
         case 'BLOCKLIST_UPDATE':
-          blocklist = message.data || [];
+          setBlocklist(message.data);
           log(`Updated blocklist: ${blocklist.length} entries`);
           browser.storage.local.set({ blocklist, lastUpdate: message.timestamp });
-          browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-            if (tabs[0]?.url) maybeBlockTab(tabs[0].id, tabs[0].url);
-          }).catch(() => {});
+          recheckAllTabs();
           break;
 
         case 'BLOCK_SETTINGS_UPDATE':
           immediatelyBlock = message.data?.immediatelyBlock === true;
-          allowOnly = readAllowOnly(message.data?.allowOnly, message.data?.allowOnlyUntil);
+          setAllowOnly(message.data?.allowOnly, message.data?.allowOnlyUntil);
           log(`Immediately block: ${immediatelyBlock}; allow list: ${allowOnly ? allowOnly.length + ' sites' : 'off'}`);
           browser.storage.local.set({ immediatelyBlock, allowOnly, allowOnlyUntil });
-          browser.tabs.query({ active: true, currentWindow: true }).then(tabs => {
-            if (tabs[0]?.url) maybeBlockTab(tabs[0].id, tabs[0].url);
-          }).catch(() => {});
+          recheckAllTabs();
           break;
 
         case 'WHITELIST_RESPONSE':
         case 'WHITELIST_UPDATE':
           // Incoming from Electron (authoritative source) — replace local state
-          whitelist = (message.data || []).filter(e => e.expiresAt > Date.now());
+          whitelist = M.readWhitelist(message.data, Date.now());
           log(`Received whitelist from app: ${whitelist.length} entries`);
           browser.storage.local.set({ whitelist });
           break;
@@ -246,14 +219,13 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message.type === 'ADD_WHITELIST' && immediatelyBlock) {
     sendResponse({ success: false, error: 'Immediate blocking is on' });
   } else if (message.type === 'ADD_WHITELIST') {
-    const durationMs = message.durationMs || WHITELIST_DURATION_MS;
+    // Never longer than the block page offers (90 minutes).
     const entry = {
       pattern: message.pattern,
       type: message.patternType,
-      expiresAt: Date.now() + durationMs
+      expiresAt: Date.now() + M.unblockDuration(message.durationMs)
     };
-    whitelist = pruneWhitelist().filter(e => e.pattern !== message.pattern);
-    whitelist.push(entry);
+    whitelist = M.readWhitelist([...pruneWhitelist().filter(e => e.pattern !== message.pattern), entry], Date.now());
     browser.storage.local.set({ whitelist });
     notifyWhitelistUpdate();
     log(`Whitelist added: ${message.patternType}:${message.pattern}`);
@@ -276,38 +248,14 @@ browser.webRequest.onBeforeRequest.addListener(
       return { cancel: false };
     }
 
-    for (const pattern of blocklist) {
-      try {
-        let matched = false;
-        const matchedPattern = pattern;
-
-        if (url.includes(pattern)) matched = true;
-
-        if (!matched && (pattern.includes('.*') || pattern.includes('\\'))) {
-          try { if (new RegExp(pattern, 'i').test(url)) matched = true; } catch (e) {}
-        }
-
-        if (!matched) {
-          try {
-            const hostname = new URL(url).hostname;
-            if (hostname === pattern ||
-                hostname.endsWith('.' + pattern) ||
-                pattern.startsWith('.') && hostname.endsWith(pattern)) matched = true;
-          } catch (e) {}
-        }
-
-        if (matched) {
-          log(`Blocking: ${url} (matched: ${pattern})`);
-          const blockType = (pattern.includes('.*') || pattern.includes('\\')) ? 'regex' : 'domain';
-          const blockPageUrl = browser.runtime.getURL('blocked.html') +
-            `?url=${encodeURIComponent(url)}` +
-            `&value=${encodeURIComponent(matchedPattern)}` +
-            `&reason=${blockType}`;
-          return { redirectUrl: blockPageUrl };
-        }
-      } catch (error) {
-        log(`Error checking pattern ${pattern}: ${error.message}`);
-      }
+    const blockedBy = M.findBlocked(url, compiledBlocklist);
+    if (blockedBy) {
+      log(`Blocking: ${url} (matched: ${blockedBy.pattern})`);
+      const blockPageUrl = browser.runtime.getURL('blocked.html') +
+        `?url=${encodeURIComponent(url)}` +
+        `&value=${encodeURIComponent(blockedBy.pattern)}` +
+        `&reason=${blockedBy.kind}`;
+      return { redirectUrl: blockPageUrl };
     }
 
     // An allow list is in force: only pages on it open. Checked for the page
@@ -357,7 +305,7 @@ setInterval(() => {
         return entry.type === 'exact'
           ? stripProtocol(tab.url) === stripProtocol(entry.pattern)
           : hostname === entry.pattern || hostname.endsWith('.' + entry.pattern);
-      } catch (e) { return false; }
+      } catch { return false; }
     });
     if (matched) {
       log(`Active tab ${tab.url} matched expired whitelist entry — reloading`);
