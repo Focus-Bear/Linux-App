@@ -102,7 +102,15 @@ const AccountPage = function ({ user, syncStatus = 'idle', onForceSync, onLogout
       setDeleteState('error');
       return;
     }
-    await onLogout?.();
+    // The account is gone: sign out, and forget its device id and
+    // "onboarding done" mark on this computer too.
+    try {
+      await onLogout?.({ forget: true });
+    } catch (error) {
+      console.error('[Account] Sign-out after deleting the account failed:', error);
+      setDeleteState('idle');
+      setDeleting(false);
+    }
   };
 
   const closeDelete = () => {

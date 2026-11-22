@@ -5,6 +5,9 @@ import { isActive } from '../electron/focusSessionModel.js';
 
 const RELOAD_MS = 15 * 60 * 1000; // lists and schedules can change on another device
 const TICK_MS = 20 * 1000; // schedules start and end on the minute
+// The main process lifts a list the window hasn't confirmed for three minutes
+// (src/electron/blockingState.js), so the window says it again every minute.
+const CONFIRM_MS = 60 * 1000;
 
 /**
  * Keeps the browser extensions on the block list that is in force: the running
@@ -36,7 +39,10 @@ export function useBlocking(session) {
   const extra = useMemo(() => effectiveBlocking([], inForce.mode), [inForce.mode]);
   const key = JSON.stringify(extra);
   useEffect(() => {
-    window.api?.setModeBlocking?.(JSON.parse(key))?.catch?.(() => {});
+    const send = () => window.api?.setModeBlocking?.(JSON.parse(key))?.catch?.(() => {});
+    send();
+    const confirm = setInterval(send, CONFIRM_MS);
+    return () => clearInterval(confirm);
   }, [key]);
 
   return { ...store, inForce };

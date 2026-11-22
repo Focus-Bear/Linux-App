@@ -7,6 +7,9 @@ import { auth0Sync, useSyncStatus } from '../services/sync.js';
 import { habitApi } from '../services/habitApi.js';
 import OnboardingPage from './onboarding.jsx';
 import { needsOnboarding, withOnboardingDone } from '../services/onboardingModel.js';
+import { ACCOUNT_STORAGE_KEYS, performSignOut } from '../services/signOutCore.js';
+import { focusApi } from '../services/focusApi.js';
+import { blockingStore } from '../services/blockingStore.js';
 
 const LOGO = `${import.meta.env.BASE_URL}bear-icon.png`;
 
@@ -105,6 +108,10 @@ const App = function() {
 
   const initializeCloudSync = async function() {
     try {
+      // The main process learns who is signed in: a focus session saved by
+      // another account is dropped instead of being shown to this one.
+      await window.api?.auth?.signedIn?.(nativeAuthService.getUser()?.sub || '')?.catch?.(() => {});
+
       // Loads the account's settings. The block list and "Immediately block"
       // are sent to the main process by the sync itself, and only when they
       // came from the account, the copy saved on this computer or the person:
@@ -154,16 +161,33 @@ const App = function() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      // Nothing more is saved for this account, and its settings are forgotten.
-      auth0Sync.reset();
-      await nativeAuthService.logout();
-      setUser(null);
-      setSettingsLoaded(false);
-    } catch (error) {
-      console.error('Logout failed:', error);
-    }
+  // Sign-out (also after Delete account, with `forget`). One path, in
+  // signOutCore.js: report a running session, forget the account in the
+  // window, tell the main process (session, blocking, breaks, dashboard
+  // pages), then clear the tokens.
+  const handleLogout = async ({ forget = false } = {}) => {
+    const userId = nativeAuthService.getUser()?.sub || '';
+    await performSignOut({
+      getSession: () => window.api?.focusSession?.get?.() ?? null,
+      reportFinish: (session) => focusApi.finishSession(session),
+      resetStores: () => {
+        // Nothing more is saved for this account, and its settings are forgotten.
+        auth0Sync.reset();
+        blockingStore.reset();
+        for (const key of ACCOUNT_STORAGE_KEYS) window.localStorage.removeItem(key);
+      },
+      tellMain: (options) => window.api?.auth?.signedOut?.(options),
+      forgetUserId: forget ? userId : null,
+      clearTokens: async () => {
+        try {
+          await nativeAuthService.logout();
+        } catch (error) {
+          console.error('Logout failed:', error?.message || error);
+        }
+        setUser(null);
+        setSettingsLoaded(false);
+      },
+    });
   };
 
   // Onboarding finished or skipped: remember it for this account on this

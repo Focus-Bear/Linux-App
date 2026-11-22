@@ -5,7 +5,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 import { app, BrowserWindow, ipcMain, screen, session, shell } from "electron";
 import {createTray, getTrayWindow} from "./tray-handler.js"
-import { createWebView, switchToWebView, hideAllWebViews, webViewConfigs, resizeCurrentWebView, getCurrentActiveWebViewId, resendWebViewMetadata, destroyWebView } from './webview-handler.js';
+import { createWebView, switchToWebView, hideAllWebViews, webViewConfigs, resizeCurrentWebView, getCurrentActiveWebViewId, resendWebViewMetadata, destroyWebView, destroyAllWebViews, clearDashboardStorage } from './webview-handler.js';
 import { exec, execFile, spawn, execSync } from 'child_process';
 import { promisify } from 'util';
 import "./Blocker.js"
@@ -14,16 +14,11 @@ import { focusState } from './focusState.js';
 import { createSettingsFile } from './settingsFile.js';
 import { isTrayPage, normaliseTheme } from './trayModel.js';
 import { checkForUpdates, getLastResult, openDownloadUrl, startUpdateChecker } from './updateChecker.js';
-import {
-  adjustSession,
-  createSession,
-  endSession,
-  isActive as isSessionActive,
-  pauseSession,
-  remainingMs,
-  restoreSession,
-  resumeSession, hasStopFriction } from './focusSessionModel.js';
-import { ALLOW_ONLY_RENEW_MS, DEFAULT_BLOCK_SETTINGS, blockSettingsMessage, normaliseBlockSettings } from './blockSettings.js';
+import { isActive as isSessionActive, hasStopFriction } from './focusSessionModel.js';
+import { createFocusSessionController } from './focusSessionController.js';
+import { ALLOW_ONLY_RENEW_MS } from './blockSettings.js';
+import { createBlockingState } from './blockingState.js';
+import { runSignOut, withoutAccountCopy } from './accountState.js';
 import {
   WARNING_SECONDS,
   breaksActive,
@@ -46,14 +41,21 @@ const execFileAsync = promisify(execFile);
 const SOCKET_PATH = '/tmp/focusbear.sock';
 let socketServer = null;
 const socketClients = new Map();       // socket → {browser: string|null, lastPing: number}
-let currentBlocklist = [];        // what the extensions block now: always-blocked + the list in force
-let alwaysBlocklist = [];         // the account's Super Distracting Sites and keywords
-// The block list in force (a focus session's or a blocking schedule's), from
-// the window (src/ui/useBlocking.js): extra entries to block and, for an
-// allow list, the only sites that may be opened.
-let modeBlocking = { blocklist: [], allowOnly: null };
+// What the extensions are told to block: the account's always-blocked sites,
+// the block list in force and "Immediately block" (see blockingState.js).
+const blocking = createBlockingState({
+  send: (line) => {
+    for (const socket of socketClients.keys()) {
+      try {
+        socket.write(line);
+      } catch (error) {
+        console.error('[Socket] Error broadcasting to client:', error.message);
+      }
+    }
+  },
+  log: (text) => console.log(text),
+});
 let currentWhitelist = [];
-let currentBlockSettings = { ...DEFAULT_BLOCK_SETTINGS };
 let warningWindow = null;
 const connectedBrowsers = new Set();
 const browserLastConnected = new Map();
@@ -112,17 +114,9 @@ async function startSocketServer() {
     console.log('[Socket] Native host connected');
     socketClients.set(socket, { browser: null, lastPing: Date.now() });
 
-    // Push current blocklist immediately so new connections don't wait for a GET_BLOCKLIST
-    if (currentBlocklist.length > 0) {
-      socket.write(JSON.stringify({
-        type: 'BLOCKLIST_UPDATE',
-        data: currentBlocklist,
-        timestamp: Date.now()
-      }) + '\n');
-    }
-
-    // Push blocking options ("Immediately block super distracting sites")
-    socket.write(blockSettingsMessage(currentBlockSettings));
+    // Push the current block list (so new connections don't wait for a
+    // GET_BLOCKLIST) and the blocking options ("Immediately block", allow list).
+    for (const line of blocking.greeting()) socket.write(line);
 
     // Push whitelist so extension can restore it after reinstall
     socket.write(JSON.stringify({
@@ -166,10 +160,11 @@ async function startSocketServer() {
             }
             if (!warningBrowserId || warningBrowserId === browser) cancelExtensionWarning();
           } else if (message.type === 'GET_BLOCKLIST') {
-            console.log(`[Socket] Sending blocklist: ${currentBlocklist.length} entries`);
+            const list = blocking.blocklist();
+            console.log(`[Socket] Sending blocklist: ${list.length} entries`);
             socket.write(JSON.stringify({
               type: 'BLOCKLIST_RESPONSE',
-              data: currentBlocklist,
+              data: list,
               timestamp: Date.now()
             }) + '\n');
           } else if (message.type === 'GET_WHITELIST') {
@@ -231,39 +226,14 @@ async function startSocketServer() {
 }
 
 function broadcastBlocklistUpdate(blocklist) {
-  alwaysBlocklist = Array.isArray(blocklist) ? blocklist : [];
-  currentBlocklist = [...new Set([...alwaysBlocklist, ...modeBlocking.blocklist])];
-  blocklist = currentBlocklist;
-
-  const message = JSON.stringify({
-    type: 'BLOCKLIST_UPDATE',
-    data: blocklist,
-    timestamp: Date.now()
-  }) + '\n';
-
   console.log(`[Socket] Broadcasting blocklist update to ${socketClients.size} clients`);
-
-  for (const socket of socketClients.keys()) {
-    try {
-      socket.write(message);
-    } catch (error) {
-      console.error('[Socket] Error broadcasting to client:', error);
-    }
-  }
+  blocking.setAlways(blocklist);
 }
 
 function broadcastBlockSettings(settings) {
   // allowOnly comes from the block list in force, not from the saved settings.
-  currentBlockSettings = normaliseBlockSettings({ ...settings, allowOnly: modeBlocking.allowOnly });
-  const message = blockSettingsMessage(currentBlockSettings);
-  console.log(`[Socket] Broadcasting block settings to ${socketClients.size} clients:`, currentBlockSettings);
-  for (const socket of socketClients.keys()) {
-    try {
-      socket.write(message);
-    } catch (error) {
-      console.error('[Socket] Error broadcasting block settings:', error);
-    }
-  }
+  console.log(`[Socket] Broadcasting block settings to ${socketClients.size} clients`);
+  blocking.setSettings(settings);
 }
 
 // browserId: check only that browser. Omit to check all selected browsers.
@@ -560,7 +530,7 @@ app.on("ready", function(){
         // has signed in and synced (and when it can't: an offline start).
         // Without the list the extensions were told to block nothing until
         // the window had loaded the account.
-        if (Array.isArray(s.urlList) && alwaysBlocklist.length === 0) {
+        if (Array.isArray(s.urlList) && blocking.always().length === 0) {
           broadcastBlocklistUpdate(s.urlList.filter((entry) => typeof entry === 'string'));
         }
         if (typeof s.immediatelyBlock === 'boolean') broadcastBlockSettings(s);
@@ -577,6 +547,9 @@ app.on("ready", function(){
         webPreferences: {
             preload: join(app.getAppPath(), "/src/electron/preload.js"),
             webSecurity: false,
+            // The window keeps time while hidden in the tray: it confirms the
+            // block list in force every minute and runs habit countdowns.
+            backgroundThrottling: false,
         },
         devTools: false,
     });
@@ -589,12 +562,7 @@ app.on("ready", function(){
     });
 
     // A focus session survives an app restart (and ends if its time ran out meanwhile).
-    fs.readFile(getFocusSessionPath(), 'utf8')
-      .then(data => {
-        const restored = restoreSession(JSON.parse(data), Date.now());
-        if (restored) setFocusSession(restored);
-      })
-      .catch(() => {}); // no saved session
+    sessions.restore();
 
     const isDev = !app.isPackaged;
 
@@ -727,9 +695,6 @@ ipcMain.on('quit-channel', function() {
 // restart all agree) and its end-of-session timer. The renderer draws it
 // (src/ui/focus-session.jsx) and reports it to the Focus Bear API.
 // ---------------------------------------------------------------------------
-let focusSession = null;
-let focusSessionTimer = null;
-
 const getFocusSessionPath = () => join(app.getPath('userData'), 'focus-session.json');
 
 function showMainWindowOn(pageId) {
@@ -740,72 +705,62 @@ function showMainWindowOn(pageId) {
     mainWindow.webContents.send('navigate-to', pageId);
 }
 
-function setFocusSession(next) {
-    focusSession = next || null;
-
-    if (focusSession) {
-        fs.writeFile(getFocusSessionPath(), JSON.stringify(focusSession)).catch(() => {});
-    } else {
-        fs.unlink(getFocusSessionPath()).catch(() => {});
-    }
-
-    const active = isSessionActive(focusSession);
-    if (active !== isFocusActive) {
-        isFocusActive = active;
-        focusState.setActive(active);
-        broadcastFocusState(active);
-        if (active) broadcastBlocklistUpdate(alwaysBlocklist);
-        console.log(active ? 'Focus session started' : 'Focus session ended');
-    }
-
-    clearTimeout(focusSessionTimer);
-    focusSessionTimer = null;
-    if (focusSession && focusSession.status === 'running') {
-        focusSessionTimer = setTimeout(() => {
-            if (!focusSession || focusSession.status !== 'running') return;
-            setFocusSession(endSession(focusSession, Date.now()));
-            showMainWindowOn('focus-session'); // the "Great job" screen
-        }, remainingMs(focusSession, Date.now()) + 50);
-    }
-
-    for (const win of [mainWindow, getTrayWindow()]) {
-        if (win && !win.isDestroyed()) win.webContents.send('focus-session-changed', focusSession);
-    }
-    return focusSession;
-}
-
-ipcMain.handle('focus-session:get', () => focusSession);
-
-ipcMain.handle('focus-session:start', (event, input) => {
-    if (isSessionActive(focusSession)) return focusSession;
-    // startTime: when the renderer already told the server the session started.
-    const startTime = Number(input && input.startTime);
-    const now = Number.isFinite(startTime) && Math.abs(Date.now() - startTime) < 60000 ? startTime : Date.now();
-    return setFocusSession(createSession({ ...(input || {}), now }));
+// The session itself, its timer, its file and whose it is: focusSessionController.js.
+const sessions = createFocusSessionController({
+    load: async () => JSON.parse(await fs.readFile(getFocusSessionPath(), 'utf8')),
+    save: (session) => fs.writeFile(getFocusSessionPath(), JSON.stringify(session), { mode: 0o600 }),
+    remove: () => fs.unlink(getFocusSessionPath()),
+    onChange: (session) => {
+        const active = isSessionActive(session);
+        if (active !== isFocusActive) {
+            isFocusActive = active;
+            focusState.setActive(active);
+            broadcastFocusState(active);
+            if (active) broadcastBlocklistUpdate(blocking.always());
+            console.log(active ? 'Focus session started' : 'Focus session ended');
+        }
+        for (const win of [mainWindow, getTrayWindow()]) {
+            if (win && !win.isDestroyed()) win.webContents.send('focus-session-changed', session);
+        }
+    },
+    onTimeUp: () => showMainWindowOn('focus-session'), // the "Great job" screen
 });
 
-ipcMain.handle('focus-session:pause', () => setFocusSession(pauseSession(focusSession, Date.now())));
-ipcMain.handle('focus-session:resume', () => setFocusSession(resumeSession(focusSession, Date.now())));
-ipcMain.handle('focus-session:adjust', (event, deltaMinutes) =>
-    setFocusSession(adjustSession(focusSession, Number(deltaMinutes) || 0, Date.now())));
-ipcMain.handle('focus-session:end', () => setFocusSession(endSession(focusSession, Date.now())));
-
+ipcMain.handle('focus-session:get', () => sessions.get());
+ipcMain.handle('focus-session:start', (event, input) => sessions.start(input));
+ipcMain.handle('focus-session:pause', () => sessions.pause());
+ipcMain.handle('focus-session:resume', () => sessions.resume());
+ipcMain.handle('focus-session:adjust', (event, deltaMinutes) => sessions.adjust(deltaMinutes));
+ipcMain.handle('focus-session:end', () => sessions.end());
 // The task queue changed (a task was finished, or another one was picked).
-ipcMain.handle('focus-session:set-tasks', (event, tasks) => {
-    if (!isSessionActive(focusSession) || !Array.isArray(tasks)) return focusSession;
-    return setFocusSession({ ...focusSession, tasks });
-});
-
-// The renderer has sent the finish to the server (or gave up); don't send it again.
-ipcMain.handle('focus-session:mark-reported', () => {
-    if (!focusSession || focusSession.status !== 'ended') return focusSession;
-    return setFocusSession({ ...focusSession, finishReported: true });
-});
-
+ipcMain.handle('focus-session:set-tasks', (event, tasks) => sessions.setTasks(tasks));
+// The renderer has sent the finish to the server; don't send it again.
+ipcMain.handle('focus-session:mark-reported', () => sessions.markReported());
 // The end screen was closed.
-ipcMain.handle('focus-session:clear', () => {
-    if (isSessionActive(focusSession)) return focusSession;
-    return setFocusSession(null);
+ipcMain.handle('focus-session:clear', () => sessions.clear());
+
+// ---------------------------------------------------------------------------
+// Sign-in and sign-out
+// The window tells the main process who is signed in. On sign-out everything
+// that belonged to the account stops here too (see accountState.js): the focus
+// session, the block list and allow list sent to the extensions, the break
+// timer, and the embedded dashboard pages with their stored sign-in.
+// ---------------------------------------------------------------------------
+ipcMain.handle('auth:signed-in', (event, userId) => {
+    sessions.signedIn(typeof userId === 'string' ? userId : '');
+    return true;
+});
+
+ipcMain.handle('auth:signed-out', (event, options) => {
+    const forgetUserId = options && typeof options.forgetUserId === 'string' ? options.forgetUserId : null;
+    return runSignOut([
+        ['focus session', () => sessions.signedOut()],
+        ['blocking', () => blocking.signedOut()],
+        ['breaks', () => stopBreaks()],
+        ['dashboard pages', () => destroyAllWebViews(mainWindow)],
+        ['dashboard sign-in', () => clearDashboardStorage()],
+        ['saved copy of the settings', () => settingsFile.update((existing) => withoutAccountCopy(existing, { forgetUserId }))],
+    ], (text) => console.error(text));
 });
 
 // ---------------------------------------------------------------------------
@@ -849,7 +804,7 @@ function onBreakDue() {
     if (!breaksActive(breakConfig)) return scheduleBreak(null);
     const now = new Date();
     const reason = holdReason(breakConfig, {
-        focusActive: isSessionActive(focusSession),
+        focusActive: sessions.isActive(),
         playing: breakPlaying,
         nowMinutes: now.getHours() * 60 + now.getMinutes(),
     });
@@ -915,6 +870,14 @@ ipcMain.handle('breaks:configure', (event, config) => {
 
 ipcMain.handle('breaks:get', () => breakState());
 
+/** Signed out: no more reminders until an account configures breaks again. */
+function stopBreaks() {
+    breakConfig = normaliseBreakConfig({ enabled: false });
+    breakPlaying = false;
+    closeBreakWarning();
+    scheduleBreak(null);
+}
+
 ipcMain.handle('breaks:finished', () => {
     breakPlaying = false;
     scheduleBreak(fullInterval());
@@ -933,31 +896,14 @@ ipcMain.on('breaks:warning-answer', (event, action, minutes) => {
 
 // The block list in force changed (a focus session started or ended, a
 // blocking schedule began or finished, or the list was edited).
-ipcMain.handle('blocking:set-mode', (event, input) => {
-    const strings = (list) => (Array.isArray(list) ? list.filter((entry) => typeof entry === 'string' && entry.trim()) : []);
-    const next = {
-        blocklist: strings(input && input.blocklist),
-        allowOnly: input && Array.isArray(input.allowOnly) ? strings(input.allowOnly) : null,
-    };
-    if (JSON.stringify(next) === JSON.stringify(modeBlocking)) return false;
-    modeBlocking = next;
-    console.log(`[Blocking] List in force: ${next.blocklist.length} extra blocked, ` +
-        (next.allowOnly ? `allow list of ${next.allowOnly.length}` : 'no allow list'));
-    broadcastBlocklistUpdate(alwaysBlocklist);
-    broadcastBlockSettings(currentBlockSettings);
-    return true;
-});
+// The window also calls this every minute to confirm the list it decided on.
+ipcMain.handle('blocking:set-mode', (event, input) => blocking.setMode(input));
 
-// An allow list is renewed every minute while it is in force (see blockSettings.js),
-// and lifted when the app quits.
-setInterval(() => {
-    if (modeBlocking.allowOnly) broadcastBlockSettings(currentBlockSettings);
-}, ALLOW_ONLY_RENEW_MS);
+// An allow list is renewed every minute while the window stands behind it
+// (see blockingState.js), and lifted when the app quits.
+setInterval(() => blocking.renew(), ALLOW_ONLY_RENEW_MS);
 app.on('before-quit', () => {
-    if (!modeBlocking.allowOnly && modeBlocking.blocklist.length === 0) return;
-    modeBlocking = { blocklist: [], allowOnly: null };
-    broadcastBlocklistUpdate(alwaysBlocklist);
-    broadcastBlockSettings(currentBlockSettings);
+    blocking.clearMode();
 });
 
 // Tray rows ("Day Plan", "To-do list", ...): show that page in the main window.
@@ -993,11 +939,11 @@ ipcMain.on('focus-session-false', function(event) {
     }
     // A Captain or Pawfessor session isn't stopped from the tray: the session
     // screen opens, where the delay or the characters to type are.
-    if (hasStopFriction(focusSession)) {
+    if (hasStopFriction(sessions.get())) {
         showMainWindowOn('focus-session');
         return;
     }
-    setFocusSession(endSession(focusSession, Date.now()));
+    sessions.end();
     showMainWindowOn('focus-session');
 
     try {
@@ -1293,8 +1239,8 @@ ipcMain.handle('cleanup-app-data', async function() {
   let success = true;
 
   try {
-    if (isFocusActive || focusSession) {
-      setFocusSession(null);
+    if (isFocusActive || sessions.get()) {
+      sessions.discard();
       details.push('Stopped active focus session');
     }
 
