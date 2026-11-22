@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { focusApi } from '../services/focusApi.js';
+import { currentUserId, finishOutbox, flushFinishes } from '../services/finishOutbox.js';
 import { isActive } from '../electron/focusSessionModel.js';
 
-// Sessions whose finish is being sent, keyed by start time, so a re-render (or
-// React StrictMode's double effect) can't send POST /finish twice.
-const reporting = new Set();
+const RETRY_MS = 60 * 1000;
 
 /**
  * The focus session held by the main process, plus a clock that ticks while it
@@ -52,17 +50,27 @@ export function useFocusSession() {
     return () => clearInterval(timer);
   }, [running]);
 
+  // An ended session's finish goes into the outbox (kept on disk) and is sent
+  // from there until the server has it; "reported" now means "handed over".
   useEffect(() => {
     if (!session || session.status !== 'ended' || session.finishReported) return;
-    const key = session.startTime;
-    if (reporting.has(key)) return;
-    reporting.add(key);
-    const send = session.synced && session.modeId ? focusApi.finishSession(session) : Promise.resolve();
-    send
-      .catch((error) => console.error('[Focus] Could not report the finished session:', error))
-      .finally(() => window.api?.focusSession?.markReported?.())
-      .finally(() => reporting.delete(key));
+    finishOutbox.add(session, currentUserId());
+    window.api?.focusSession?.markReported?.();
+    flushFinishes();
   }, [session]);
+
+  // Finishes that could not be sent earlier: now, when the network returns, and every minute.
+  useEffect(() => {
+    flushFinishes();
+    const timer = setInterval(() => {
+      if (finishOutbox.pending(currentUserId()) > 0) flushFinishes();
+    }, RETRY_MS);
+    window.addEventListener('online', flushFinishes);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', flushFinishes);
+    };
+  }, []);
 
   return { session, now, loaded, active: isActive(session) };
 }

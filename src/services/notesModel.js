@@ -76,6 +76,29 @@ export function noteDate(note, locale = 'en-GB', timeZone) {
   return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone }).format(time);
 }
 
+/** When the note was last saved: updated_at, else created_at (epoch ms; 0 when unknown). */
+export function updatedTime(note) {
+  const time = Date.parse(note?.updated_at || note?.created_at || '');
+  return Number.isFinite(time) ? time : 0;
+}
+
+/**
+ * The brain dump to use among `notes`, or null. The server does not keep one
+ * per account, so an account can have several (another app missed the old one
+ * and made a new one): the most recently updated is the one in use, as on
+ * Windows (Core/Notes/PersonalNotes.cs, BrainDumpTracker).
+ */
+export function latestBrainDump(notes) {
+  let latest = null;
+  for (const note of Array.isArray(notes) ? notes : []) {
+    if (isBrainDump(note) && (!latest || updatedTime(note) > updatedTime(latest))) latest = note;
+  }
+  return latest;
+}
+
+/** Shown when text can't be added to a note that is at the server's limit. */
+export const BRAIN_DUMP_FULL = 'Your Brain Dump is full. Open it under Notes and clear some text, then try again.';
+
 /**
  * The list as shown: the brain dump first (a placeholder row when the account
  * has none yet), then pinned notes, then the rest, newest first. A note that
@@ -90,7 +113,9 @@ export function arrangeNotes(notes, { withBrainDump = true } = {}) {
     unique.push(note);
   }
   const rank = (note) => (isBrainDump(note) ? 0 : isPinned(note) ? 1 : 2);
-  unique.sort((a, b) => rank(a) - rank(b) || noteTime(b) - noteTime(a));
+  // An account can carry several brain dumps (see latestBrainDump): the one in use is on top.
+  const newest = (a, b) => (isBrainDump(a) && isBrainDump(b) ? updatedTime(b) - updatedTime(a) : 0) || noteTime(b) - noteTime(a);
+  unique.sort((a, b) => rank(a) - rank(b) || newest(a, b));
   if (withBrainDump && !unique.some(isBrainDump)) {
     unique.unshift({ id: BRAIN_DUMP_PLACEHOLDER_ID, title: BRAIN_DUMP_TITLE, body: '', is_brain_dump: true, tags: [] });
   }
@@ -107,10 +132,13 @@ export function noteError(title, body) {
 
 /**
  * Body of PUT /note. A note without a server id is created; the brain dump is
- * flagged so the server keeps one per account.
+ * flagged as such (the server does not check that there is only one: see
+ * `findBrainDump` in toolsApiCore.js). The text is sent whole: a body over
+ * MAX_BODY is refused by the server, and callers check with `noteError` first,
+ * so nothing is ever cut off the end without the user knowing.
  */
 export function noteBody(note, { title, body }) {
-  const out = { title: String(title ?? '').trim().slice(0, MAX_TITLE), body: String(body ?? '').slice(0, MAX_BODY) };
+  const out = { title: String(title ?? '').trim().slice(0, MAX_TITLE), body: String(body ?? '') };
   if (!isLocalNoteId(note?.id)) out.id = note.id;
   if (isBrainDump(note)) out.is_brain_dump = true;
   return out;

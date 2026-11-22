@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import './styles/distracting-sites.css'; // shared .fb-input and .fb-dialog
 import './styles/blocking.css';
 import { blockingStore } from '../services/blockingStore.js';
+import { SCHEDULE_LOCKED } from '../electron/blockingModel.js';
 import {
   DAY_FULL_NAMES,
   DAY_LETTERS,
@@ -34,8 +35,11 @@ const PRESETS = [
  * `blocking` is the shell's blocking state (see useBlocking.js).
  */
 export default function BlockingSchedule({ blocking, onEditBlockLists }) {
-  const { status, modes, schedules, error, inForce } = blocking;
+  const { status, modes, schedules, error, inForce, locks } = blocking;
   const [editing, setEditing] = useState(null); // null | { schedule: object | null }
+  // A strict schedule that is running can't be edited or deleted until it ends
+  // (the change would lift it on every device).
+  const isLocked = (schedule) => Boolean(schedule && locks?.scheduleIds?.has(schedule.id));
   const lists = visibleLists(modes);
   const listName = (id) => modes.find((mode) => mode.id === id)?.name || 'a deleted block list';
   const now = new Date();
@@ -111,8 +115,10 @@ export default function BlockingSchedule({ blocking, onEditBlockLists }) {
                   className="fb-btn fb-btn--gray fb-btn--small"
                   onClick={() => setEditing({ schedule })}
                   aria-label={`Edit ${schedule.name}`}
+                  disabled={isLocked(schedule)}
+                  title={isLocked(schedule) ? SCHEDULE_LOCKED : undefined}
                 >
-                  Edit
+                  {isLocked(schedule) ? 'Locked' : 'Edit'}
                 </button>
               </div>
             );

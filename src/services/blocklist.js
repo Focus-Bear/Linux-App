@@ -19,6 +19,9 @@ export function keywordsOf(list = []) {
   return list.filter(isKeywordEntry);
 }
 
+// In nearly every web address: as keywords they would block the whole web.
+export const TOO_COMMON_KEYWORDS = ['com', 'www', 'http', 'https'];
+
 /** Lower-cased, trimmed keyword, or '' when there is nothing left. */
 export function normaliseKeyword(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -31,24 +34,37 @@ export function keywordError(value, list = []) {
   if (keyword.includes('.')) return 'That looks like a website. Add it under Super Distracting Sites.';
   if (/\s/.test(keyword)) return 'Use a single word. Web addresses have no spaces.';
   if (keyword.length < 3) return 'Use at least 3 letters, or too many pages will be blocked.';
+  if (TOO_COMMON_KEYWORDS.includes(keyword)) return 'That word is in almost every web address. Pick a more specific keyword.';
   if (list.some((entry) => normaliseKeyword(entry) === keyword)) return 'That keyword is already on your list.';
   return null;
 }
 
+/**
+ * A site as it is stored: trimmed, lower case, without "http://" / "https://".
+ * The extensions compare against lower-case addresses, so "Facebook.com" used
+ * to be saved as typed and then never blocked in Firefox.
+ */
+export function normaliseSite(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/^https?:\/\//, '');
+}
+
 /** Why a site can't be added, or null when it is fine. */
 export function siteError(value, list = []) {
-  const site = String(value ?? '').trim();
+  const site = normaliseSite(value);
   if (!site) return 'Type a website first.';
   if (/\s/.test(site)) return 'Web addresses have no spaces.';
   if (!site.includes('.')) return 'Add the full address, like facebook.com. Single words go under Keyword Blocking.';
-  if (list.includes(site)) return 'That site is already on your list.';
+  if (list.some((entry) => normaliseSite(entry) === site)) return 'That site is already on your list.';
   return null;
 }
 
-/** The list with `entry` appended, unless it is empty or already there. */
+/**
+ * The list with `entry` appended (lower case, without scheme), unless it is
+ * empty or already there in any case.
+ */
 export function addEntry(list = [], entry) {
-  const value = String(entry ?? '').trim();
-  if (!value || list.includes(value)) return list;
+  const value = normaliseSite(entry);
+  if (!value || list.some((existing) => normaliseSite(existing) === value)) return list;
   return [...list, value];
 }
 

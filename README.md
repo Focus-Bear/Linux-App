@@ -87,7 +87,7 @@ Focus Bear uses a **native messaging bridge** to enable browser-based URL blocki
 │ Electron App                                                 │
 │ (blocklist management, Unix socket server)                   │
 └────────────────────┬─────────────────────────────────────────┘
-                     │ Unix Socket (/tmp/focusbear.sock)
+                     │ Unix Socket ($XDG_RUNTIME_DIR/focusbear) 
                      │
 ┌────────────────────▼─────────────────────────────────────────┐
 │ Native Messaging Host                                        │
@@ -234,7 +234,7 @@ sudo zypper remove focusbear
 rm -rf ~/.local/share/focusbear/
 rm -rf ~/.mozilla/native-messaging-hosts/com.focusbear.native_host.json
 rm -rf ~/.config/focusbear/
-rm -f /tmp/focusbear.sock
+rm -rf "$XDG_RUNTIME_DIR/focusbear"
 ```
 
 ---

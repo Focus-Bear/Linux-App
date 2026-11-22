@@ -119,6 +119,67 @@ test('adding a task plans it for the day; a blank title sends nothing', async ()
   assert.equal(calls.length, 1);
 });
 
+// --- own events and the account's timezone ----------------------------------------
+
+/**
+ * A server that files own events by day the way day-plan.service.ts does for an
+ * account with no timezone: by the UTC day of their start.
+ */
+function utcDayServer(stored, { failing = [] } = {}) {
+  const calls = [];
+  const fetch = async (url, init) => {
+    calls.push(`${init.method} ${url.replace('https://api.test', '')}`);
+    if (failing.some((part) => url.includes(part))) return { ok: false, status: 500, text: async () => '' };
+    const day = url.split('/day/')[1];
+    const pick = (list) => list.filter((event) => event.event_begins.slice(0, 10) === day);
+    const body = url.includes('/event-series/') ? { day, events: pick(stored.series || []) } : { day, events: pick(stored.single || []), has_more: false };
+    return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+  };
+  return { calls, api: createDayPlanApi({ fetch, getToken: async () => 'tok', baseUrl: 'https://api.test' }) };
+}
+
+test('an event the server files under a neighbouring day is still read (Sydney PC, account on UTC)', async () => {
+  // 08:00 on 23 Nov in Sydney (UTC+11) is 21:00Z on the 22nd; 15:00 is 04:00Z on the 23rd.
+  const morning = { id: 'e-morning', title: 'Dentist', event_begins: '2026-11-22T21:00:00.000Z', event_ends: '2026-11-22T22:00:00.000Z' };
+  const afternoon = { id: 'e-afternoon', title: 'School run', event_begins: '2026-11-23T04:00:00.000Z', event_ends: '2026-11-23T04:30:00.000Z' };
+  const { api } = utcDayServer({ single: [morning, afternoon] });
+  const events = await api.getPlanEvents('2026-11-23');
+  assert.deepEqual(events.map((event) => event.id).sort(), ['e-afternoon', 'e-morning']);
+});
+
+test('the same holds west of UTC, and for the repeats of a series', async () => {
+  // 20:00 on 22 Nov in Los Angeles (UTC-8) is 04:00Z on the 23rd.
+  const evening = { id: 'e-evening', title: 'Choir', event_begins: '2026-11-23T04:00:00.000Z', event_ends: '2026-11-23T05:00:00.000Z' };
+  const repeat = { occurrence_id: 's1:2026-11-23T03:00:00.000Z', series_id: 's1', summary: 'Walk', event_begins: '2026-11-23T03:00:00.000Z', event_ends: '2026-11-23T03:30:00.000Z' };
+  const { api } = utcDayServer({ single: [evening], series: [repeat] });
+  const events = await api.getPlanEvents('2026-11-22');
+  assert.deepEqual(events, [evening, { ...repeat, is_series: true }]);
+});
+
+test('an event listed under two days is kept once; a neighbouring day failing loses only that day', async () => {
+  const fetchFor = (routes) => make(routes);
+  const crossing = { id: 'x', title: 'Night shift', event_begins: '2026-11-21T22:00:00.000Z', event_ends: '2026-11-22T02:00:00.000Z' };
+  const twice = fetchFor([['/day-plan/events/day/', 200, { events: [crossing] }], ['/day-plan/event-series/', 200, { events: [] }]]);
+  assert.deepEqual(await twice.api.getPlanEvents(DAY), [crossing]);
+
+  const own = { id: 'own', title: 'Lunch', event_begins: `${DAY}T12:00:00.000Z`, event_ends: `${DAY}T13:00:00.000Z` };
+  const partly = utcDayServer({ single: [own] }, { failing: ['/day/2026-11-20', '/day/2026-11-22', '/event-series/'] });
+  assert.deepEqual(await partly.api.getPlanEvents(DAY), [own]);
+  // The day itself failing is still an error (the page then says the events are missing).
+  const broken = utcDayServer({ single: [own] }, { failing: [`/events/day/${DAY}`] });
+  await assert.rejects(broken.api.getPlanEvents(DAY), (error) => error.status === 500);
+});
+
+test('the account is told its IANA timezone; an offset or a bare UTC is not sent', async () => {
+  const { api, calls } = make([['/user/timezone', 200, { timezone: 'Australia/Sydney' }]]);
+  assert.equal(await api.declareTimezone('Australia/Sydney'), true);
+  assert.equal(calls[0].method, 'PATCH');
+  assert.equal(calls[0].url, 'https://api.test/user/timezone');
+  assert.deepEqual(calls[0].body, { timezone: 'Australia/Sydney' });
+  for (const useless of ['UTC', 'UTC+11:00', '', null, undefined]) assert.equal(await api.declareTimezone(useless), false);
+  assert.equal(calls.length, 1);
+});
+
 test('without a token nothing is sent', async () => {
   const { api, calls } = make(BASE_ROUTES, { getToken: async () => null });
   await assert.rejects(api.getSettings(), (error) => error.status === 401);

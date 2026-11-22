@@ -16,9 +16,18 @@ import { isTrayPage, normaliseTheme } from './trayModel.js';
 import { checkForUpdates, getLastResult, openDownloadUrl, startUpdateChecker } from './updateChecker.js';
 import { isActive as isSessionActive, hasStopFriction } from './focusSessionModel.js';
 import { createFocusSessionController } from './focusSessionController.js';
-import { ALLOW_ONLY_RENEW_MS } from './blockSettings.js';
+import { ALLOW_ONLY_RENEW_MS, effectiveImmediateBlock } from './blockSettings.js';
 import { createBlockingState } from './blockingState.js';
 import { runSignOut, withoutAccountCopy } from './accountState.js';
+import {
+  createLineReader,
+  createSocketAuth,
+  prepareSocket,
+  restrictSocket,
+  stopNativeHosts,
+  validateWhitelistUpdate,
+  watchLegacySocket,
+} from './socketAuth.js';
 import {
   WARNING_SECONDS,
   breaksActive,
@@ -38,7 +47,9 @@ dotenv.config();
 
 const execFileAsync = promisify(execFile);
 
-const SOCKET_PATH = '/tmp/focusbear.sock';
+// The socket the browsers' native-messaging hosts connect to: in a directory
+// only this user can enter, and a host must present the token written there
+// before anything it sends is listened to (see socketAuth.js).
 let socketServer = null;
 const socketClients = new Map();       // socket → {browser: string|null, lastPing: number}
 // What the extensions are told to block: the account's always-blocked sites,
@@ -89,8 +100,10 @@ function getWhitelistPath() {
 async function loadWhitelistFromDisk() {
   try {
     const data = await fs.readFile(getWhitelistPath(), 'utf8');
-    const entries = JSON.parse(data);
-    currentWhitelist = entries.filter(e => e.expiresAt > Date.now());
+    // What is on disk gets the same checks as what a host sends (an entry
+    // with an expiry years away may still be in the file).
+    const checked = validateWhitelistUpdate(JSON.parse(data));
+    currentWhitelist = checked.ok ? checked.entries : [];
     console.log(`[Whitelist] Loaded ${currentWhitelist.length} active entries from disk`);
   } catch (error) {
     currentWhitelist = [];
@@ -106,31 +119,41 @@ async function saveWhitelistToDisk(entries) {
 }
 
 async function startSocketServer() {
+  let files;
   try {
-    await unlink(SOCKET_PATH);
-  } catch { /* stale socket, ignore */ }
+    files = await prepareSocket();
+  } catch (error) {
+    console.error('[Socket] No private directory for the socket; the browser extensions cannot connect:', error.message);
+    return;
+  }
+  const socketAuth = createSocketAuth({ token: files.token, log: (text) => console.error(text) });
 
   socketServer = createServer((socket) => {
-    console.log('[Socket] Native host connected');
-    socketClients.set(socket, { browser: null, lastPing: Date.now() });
+    // Nothing is sent to, or taken from, a connection until it has shown the token.
+    const guard = socketAuth.guard(socket, {
+      onAuthenticated: () => {
+        console.log('[Socket] Native host connected');
+        socketClients.set(socket, { browser: null, lastPing: Date.now() });
 
-    // Push the current block list (so new connections don't wait for a
-    // GET_BLOCKLIST) and the blocking options ("Immediately block", allow list).
-    for (const line of blocking.greeting()) socket.write(line);
+        // Push the current block list (so new connections don't wait for a
+        // GET_BLOCKLIST) and the blocking options ("Immediately block", allow list).
+        for (const line of blocking.greeting()) socket.write(line);
 
-    // Push whitelist so extension can restore it after reinstall
-    socket.write(JSON.stringify({
-      type: 'WHITELIST_UPDATE',
-      data: currentWhitelist.filter(e => e.expiresAt > Date.now()),
-      timestamp: Date.now()
-    }) + '\n');
+        // Push whitelist so extension can restore it after reinstall
+        socket.write(JSON.stringify({
+          type: 'WHITELIST_UPDATE',
+          data: currentWhitelist.filter(e => e.expiresAt > Date.now()),
+          timestamp: Date.now()
+        }) + '\n');
+      },
+    });
 
-    socket.on('data', (data) => {
-      const lines = data.toString().split('\n').filter(line => line.trim());
-
-      lines.forEach(line => {
+    const feed = createLineReader({
+      onOverflow: () => socket.destroy(),
+      onLine: (line) => {
         try {
           const message = JSON.parse(line);
+          if (!guard.accept(message)) return;
           const browserTag = message.browser ? ` (${message.browser})` : '';
           console.log(`[Socket] Received from native host: ${message.type}${browserTag}`);
 
@@ -176,17 +199,31 @@ async function startSocketServer() {
               timestamp: Date.now()
             }) + '\n');
           } else if (message.type === 'WHITELIST_UPDATE') {
-            currentWhitelist = message.data.filter(e => e.expiresAt > Date.now());
+            // Temporary unblocks are checked before they are kept: shape,
+            // an expiry of at most 90 minutes, and none while "Immediately
+            // block" is on. (One line used to buy an unblock for ever.)
+            const checked = validateWhitelistUpdate(message.data, {
+              current: currentWhitelist,
+              immediatelyBlock: blocking.settings().immediatelyBlock === true,
+            });
+            if (!checked.ok) {
+              console.error(`[Socket] Whitelist update refused: ${checked.reason}`);
+              return;
+            }
+            currentWhitelist = checked.entries;
             console.log(`[Socket] Whitelist updated: ${currentWhitelist.length} entries`);
             saveWhitelistToDisk(currentWhitelist);
           }
         } catch (error) {
-          console.error('[Socket] Error parsing message:', error);
+          console.error('[Socket] Error parsing message:', error.message);
         }
-      });
+      },
     });
+    socket.on('data', feed);
 
     socket.on('close', () => {
+      guard.dispose();
+      if (!socketClients.has(socket)) return; // never authenticated
       console.log('[Socket] Native host disconnected');
       const client = socketClients.get(socket);
       socketClients.delete(socket);
@@ -216,8 +253,17 @@ async function startSocketServer() {
     });
   });
 
-  socketServer.listen(SOCKET_PATH, () => {
-    console.log(`[Socket] Server listening on ${SOCKET_PATH}`);
+  socketServer.listen(files.socketPath, () => {
+    console.log(`[Socket] Server listening on ${files.socketPath}`);
+    restrictSocket(files.socketPath).catch((error) => console.error('[Socket] Could not restrict the socket:', error.message));
+  });
+
+  // A native host started by an older version still looks at /tmp/focusbear.sock.
+  // For a few seconds the app answers there only to notice it and stop it, so
+  // the browser starts the current host (which knows the new place and the token).
+  watchLegacySocket({
+    log: (text) => console.error(text),
+    onOutdatedHost: () => stopNativeHosts({ execFile, log: (text) => console.error(text) }),
   });
 
   socketServer.on('error', (error) => {
@@ -533,7 +579,9 @@ app.on("ready", function(){
         if (Array.isArray(s.urlList) && blocking.always().length === 0) {
           broadcastBlocklistUpdate(s.urlList.filter((entry) => typeof entry === 'string'));
         }
-        if (typeof s.immediatelyBlock === 'boolean') broadcastBlockSettings(s);
+        if (typeof s.immediatelyBlock === 'boolean' || s.selectedBearMode) {
+          broadcastBlockSettings({ immediatelyBlock: effectiveImmediateBlock(s) });
+        }
         if (s.setupComplete) startPingMonitor();
       })
       .catch(() => {});
@@ -684,7 +732,15 @@ ipcMain.on('extension-warning-close-browser', async () => {
   await killBrowsers(warningBrowserId);
 });
 
+// Tray > Quit. While a Captain or Pawfessor session runs, quitting would lift
+// its blocking in one click, so the session screen opens instead (where the
+// wait or the characters to type are) and says why.
 ipcMain.on('quit-channel', function() {
+    if (sessions.blocksQuit()) {
+        showMainWindowOn('focus-session');
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('quit-refused');
+        return;
+    }
     exitflag = true
     app.quit();
 });
@@ -728,10 +784,15 @@ const sessions = createFocusSessionController({
 
 ipcMain.handle('focus-session:get', () => sessions.get());
 ipcMain.handle('focus-session:start', (event, input) => sessions.start(input));
+// Strictness lives in the controller: pause / end / "− 5 min" are refused
+// until the wait asked for with request-stop has run (Captain) or the right
+// characters come with the call (Pawfessor).
+ipcMain.handle('focus-session:request-stop', (event, action) => sessions.requestStop(action));
+ipcMain.handle('focus-session:cancel-stop', () => sessions.cancelStop());
 ipcMain.handle('focus-session:pause', () => sessions.pause());
 ipcMain.handle('focus-session:resume', () => sessions.resume());
 ipcMain.handle('focus-session:adjust', (event, deltaMinutes) => sessions.adjust(deltaMinutes));
-ipcMain.handle('focus-session:end', () => sessions.end());
+ipcMain.handle('focus-session:end', (event, code) => sessions.end(typeof code === 'string' ? code : ''));
 // The task queue changed (a task was finished, or another one was picked).
 ipcMain.handle('focus-session:set-tasks', (event, tasks) => sessions.setTasks(tasks));
 // The renderer has sent the finish to the server; don't send it again.
@@ -903,6 +964,10 @@ ipcMain.handle('blocking:set-mode', (event, input) => blocking.setMode(input));
 // (see blockingState.js), and lifted when the app quits.
 setInterval(() => blocking.renew(), ALLOW_ONLY_RENEW_MS);
 app.on('before-quit', () => {
+    // A strict session's list is not lifted by the app going away (log-out,
+    // kill): the extensions keep the block list, and an allow list runs out by
+    // itself after three minutes. The session resumes at the next start.
+    if (sessions.blocksQuit()) return;
     blocking.clearMode();
 });
 
@@ -929,6 +994,16 @@ ipcMain.on('focus-session-true', function(event) {
         return;
     }
     showMainWindowOn('focus-session');
+});
+
+// Tray > Pause: a Captain session's wait is on the session screen, so the tray
+// sends the person there instead of pausing at once.
+ipcMain.on('focus-session-pause-from-tray', function() {
+    if (hasStopFriction(sessions.get())) {
+        showMainWindowOn('focus-session');
+        return;
+    }
+    sessions.pause();
 });
 
 // Tray "Stop Focus Session": end it and show the summary.
@@ -1193,8 +1268,9 @@ function applySettings(settings) {
     broadcastBlocklistUpdate(settings.urlList);
   }
 
-  if (typeof settings.immediatelyBlock === 'boolean') {
-    broadcastBlockSettings(settings);
+  // Grizzly Bear mode blocks outright too (see effectiveImmediateBlock).
+  if (typeof settings.immediatelyBlock === 'boolean' || settings.selectedBearMode) {
+    broadcastBlockSettings({ immediatelyBlock: effectiveImmediateBlock(settings) });
   }
 
   if (settings.selectedBrowsers) {

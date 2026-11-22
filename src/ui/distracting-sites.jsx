@@ -7,6 +7,9 @@ const Distracting_sites_page = function () {
   // Saved to the account as kImmediatelyBlockDistractingSites (same key as Mac
   // and Windows). When on, the block page has no "Unblock temporarily".
   const [immediatelyBlock, setImmediatelyBlock, isLoadingBlock] = useSyncedState('immediatelyBlock');
+  // Grizzly Bear mode (Settings > Strictness) blocks outright whatever this box says.
+  const [bearMode] = useSyncedState('selectedBearMode');
+  const grizzly = bearMode === 'grizzly';
 
   return (
     <ListEditor
@@ -30,15 +33,17 @@ const Distracting_sites_page = function () {
       <label className="fb-check">
         <input
           type="checkbox"
-          checked={Boolean(immediatelyBlock)}
-          disabled={isLoadingBlock}
+          checked={Boolean(immediatelyBlock) || grizzly}
+          disabled={isLoadingBlock || grizzly}
           onChange={(e) => setImmediatelyBlock(e.target.checked)}
           aria-describedby="immediately-block-help"
         />
         <span>Immediately block super distracting sites</span>
       </label>
       <p id="immediately-block-help" className="fb-check__help">
-        {immediatelyBlock
+        {grizzly
+          ? 'On, because you are in Grizzly Bear mode (Settings › Strictness): these sites are blocked outright.'
+          : immediatelyBlock
           ? 'On: these sites are blocked outright. The block page has no "Unblock temporarily" button.'
           : 'Off: the block page lets you unblock a site for a few minutes when you really need it.'}
       </p>

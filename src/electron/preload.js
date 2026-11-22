@@ -106,10 +106,23 @@ const API = {
         get: function() { return ipcRenderer.invoke('focus-session:get'); },
         // { modeId, modeName, intention, minutes, synced, untimed, strictness, tasks }
         start: function(input) { return ipcRenderer.invoke('focus-session:start', input); },
+        // Asks to 'end' | 'pause' | 'reduce'. Answers { ready } | { waitSeconds, readyAt } | { code } | { refused }.
+        // The main process refuses pause / end / adjust(-n) until the wait has run or the code is right.
+        requestStop: function(action) { return ipcRenderer.invoke('focus-session:request-stop', action); },
+        cancelStop: function() { return ipcRenderer.invoke('focus-session:cancel-stop'); },
         pause: function() { return ipcRenderer.invoke('focus-session:pause'); },
+        // Tray: pauses a Junior session; opens the session screen for a Captain one.
+        pauseFromTray: function() { return ipcRenderer.send('focus-session-pause-from-tray'); },
         resume: function() { return ipcRenderer.invoke('focus-session:resume'); },
         adjust: function(deltaMinutes) { return ipcRenderer.invoke('focus-session:adjust', deltaMinutes); },
-        end: function() { return ipcRenderer.invoke('focus-session:end'); },
+        // code: the characters typed, for a Pawfessor session.
+        end: function(code) { return ipcRenderer.invoke('focus-session:end', code); },
+        // Tray > Quit was refused because a strict session is running.
+        onQuitRefused: function(callback) {
+            const listener = function() { callback(); };
+            ipcRenderer.on('quit-refused', listener);
+            return function() { ipcRenderer.removeListener('quit-refused', listener); };
+        },
         // The session's task queue after a task was finished or picked.
         setTasks: function(tasks) { return ipcRenderer.invoke('focus-session:set-tasks', tasks); },
         markReported: function() { return ipcRenderer.invoke('focus-session:mark-reported'); },

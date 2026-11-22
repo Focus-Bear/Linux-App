@@ -186,6 +186,38 @@
   color: var(--fb-text-orange);
 }
 
+/* Tables and picture captions made in the web app are shown as such. */
+.fb-notes__body table {
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  max-width: 100%;
+}
+
+.fb-notes__body th,
+.fb-notes__body td {
+  border: 1px solid var(--fb-border-strong);
+  padding: 4px 8px;
+  vertical-align: top;
+}
+
+.fb-notes__body figure {
+  margin: 0 0 8px;
+}
+
+.fb-notes__body figcaption {
+  color: var(--fb-text-disabled);
+  font-size: 0.9em;
+}
+
+/* A note with formatting this editor can't keep: readable, not editable. */
+.fb-notes__body[aria-readonly='true'] {
+  background: transparent;
+}
+
+.fb-notes__read-only {
+  margin: 0 0 10px;
+}
+
 /* ---------- Stats ---------- */
 .fb-stats {
   max-width: 980px;

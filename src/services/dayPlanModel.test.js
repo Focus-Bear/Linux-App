@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildTimeline,
+  dateDay,
   dayKey,
   formatDay,
   formatSpan,
@@ -10,6 +11,7 @@ import {
   meetingCards,
   minutesOfDay,
   newTaskBody,
+  overridesAfterLoad,
   parseTime,
   progressIds,
   remainingTaskSeconds,
@@ -211,21 +213,63 @@ const TASKS = [
   null,
 ];
 
-test('a task belongs to its planned day, else its due date', () => {
+test('a task belongs to its due date, else its planned day', () => {
   assert.equal(taskDay(TASKS[0]), '2026-11-21');
   assert.equal(taskDay(TASKS[1]), '2026-11-20');
-  assert.equal(taskDay(TASKS[6]), '2026-11-21');
+  assert.equal(taskDay(TASKS[4]), '2026-11-21', 'planned only');
+  assert.equal(taskDay(TASKS[6]), '2026-11-30', 'filed by due date, as on Windows: planned_date lags behind edits');
   assert.equal(taskDay(TASKS[3]), null);
   assert.equal(taskDay(null), null);
 });
 
+// A stand-in for a PC in another timezone: the local day of an instant at a fixed UTC offset.
+const zone = (minutesEast) => (date) => new Date(date.getTime() + minutesEast * 60000).toISOString().slice(0, 10);
+const SYDNEY = zone(11 * 60); // UTC+11
+const LOS_ANGELES = zone(-8 * 60); // UTC-8
+
+test('a due date with a time part means the local day it falls on (UTC+11 and UTC-8)', () => {
+  // Due 23 Nov in Sydney, stored as local midnight: 13:00Z on the 22nd.
+  const sydneyTask = { id: 's', due_date: '2026-11-22T13:00:00.000Z' };
+  assert.equal(taskDay(sydneyTask, SYDNEY), '2026-11-23');
+  assert.equal(taskDay(sydneyTask, LOS_ANGELES), '2026-11-22');
+  // Due 22 Nov in Los Angeles at 23:59 local: already the 23rd in UTC.
+  const lateTask = { id: 'l', due_date: '2026-11-23T07:59:00.000Z' };
+  assert.equal(taskDay(lateTask, LOS_ANGELES), '2026-11-22');
+  assert.equal(taskDay({ id: 'm', due_date: '2026-11-23T08:00:00Z' }, LOS_ANGELES), '2026-11-23');
+  assert.equal(taskDay(lateTask, SYDNEY), '2026-11-23');
+});
+
+test('a plain day, and the midnight-UTC instant the server makes of one, is that day in every zone', () => {
+  for (const toLocalDay of [SYDNEY, LOS_ANGELES]) {
+    assert.equal(dateDay('2026-11-23', toLocalDay), '2026-11-23');
+    // PUT /to-do with due_date '2026-11-23' comes back like this (timestamptz column).
+    assert.equal(dateDay('2026-11-23T00:00:00.000Z', toLocalDay), '2026-11-23');
+    assert.equal(taskDay({ planned_date: '2026-11-23' }, toLocalDay), '2026-11-23');
+  }
+  assert.equal(dateDay('', SYDNEY), null);
+  assert.equal(dateDay(null, SYDNEY), null);
+  assert.equal(dateDay('next week', SYDNEY), null);
+  assert.equal(dateDay('2026-13-45T99:00:00Z', SYDNEY), null);
+});
+
+test('in Sydney a task due tomorrow is not listed today, and is not overdue tomorrow', () => {
+  const tasks = [{ id: 's', title: 'Due on the 23rd', due_date: '2026-11-22T13:00:00.000Z', status: 'NOT_STARTED' }];
+  const options = { toLocalDay: SYDNEY };
+  assert.deepEqual(tasksForDay(tasks, '2026-11-22', '2026-11-22', options), []);
+  const [listed] = tasksForDay(tasks, '2026-11-23', '2026-11-23', options);
+  assert.equal(listed.id, 's');
+  assert.equal(listed.overdue, false);
+  // In Los Angeles the same instant is the 22nd.
+  assert.equal(tasksForDay(tasks, '2026-11-22', '2026-11-22', { toLocalDay: LOS_ANGELES }).length, 1);
+});
+
 test('tasks for today: planned or due today plus overdue ones, unfinished and most important first', () => {
   const list = tasksForDay(TASKS, DAY);
-  assert.deepEqual(list.map((t) => t.id), ['t2', 't1', 't7', 't5']);
+  assert.deepEqual(list.map((t) => t.id), ['t2', 't1', 't5']);
   assert.equal(list[0].overdue, true);
   assert.equal(list[1].overdue, false);
   assert.equal(list[1].seconds, 1800);
-  assert.equal(list[3].completed, true);
+  assert.equal(list[2].completed, true);
   assert.deepEqual(tasksForDay(null, DAY), []);
 });
 
@@ -245,6 +289,76 @@ test('ticking a task sends the upsert body with its title and quadrant', () => {
   assert.equal(taskStatusBody(task, false).status, 'NOT_STARTED');
   assert.equal(isCompleted({ status: 'COMPLETED' }), true);
   assert.equal(isCompleted({ status: 'IN_PROGRESS' }), false);
+});
+
+test('un-ticking gives a task back the status it had; ticks made here show over the loaded list', () => {
+  const raw = [
+    { id: 'p', title: 'Half done', eisenhower_quadrant: 3, due_date: DAY, status: 'IN_PROGRESS' },
+    { id: 'c', title: 'Was completed', eisenhower_quadrant: 2, due_date: DAY, status: 'COMPLETED' },
+  ];
+  const ticked = tasksForDay(raw, DAY, DAY, { overrides: { p: true, c: false } });
+  const half = ticked.find((task) => task.id === 'p');
+  assert.equal(half.completed, true, 'ticked here');
+  assert.deepEqual(taskStatusBody(half, false), { id: 'p', title: 'Half done', eisenhower_quadrant: 3, status: 'IN_PROGRESS' });
+  const reopened = ticked.find((task) => task.id === 'c');
+  assert.equal(reopened.completed, false, 'un-ticked here');
+  assert.equal(taskStatusBody(reopened, false).status, 'NOT_STARTED');
+  assert.equal(taskStatusBody(reopened, true).status, 'COMPLETED');
+  // An overdue task ticked here leaves today's list like any completed overdue task.
+  const overdue = [{ id: 'o', title: 'Old', due_date: '2026-11-19', status: 'NOT_STARTED' }];
+  assert.equal(tasksForDay(overdue, DAY, DAY).length, 1);
+  assert.equal(tasksForDay(overdue, DAY, DAY, { overrides: { o: true } }).length, 0);
+});
+
+test('after a reload only the ticks it could not know about are kept', () => {
+  const overrides = { before: true, during: true, saving: false };
+  const savedAt = { before: 1000, during: 2500, saving: Infinity };
+  // The reload was asked for at 2000: `before` is in its answer, the others may not be.
+  assert.deepEqual(overridesAfterLoad(overrides, savedAt, 2000), { during: true, saving: false });
+  assert.deepEqual(overridesAfterLoad({ stray: true }, {}, 2000), {});
+  assert.deepEqual(overridesAfterLoad(null, null, 0), {});
+});
+
+test('a meeting that began before midnight and is still running starts the day at 00:00', () => {
+  const events = [{ id: 'late', summary: 'Release night', event_begins: '2026-11-20T23:30:00', event_ends: `${DAY}T00:45:00` }];
+  const [today] = meetingCards(events, DAY);
+  assert.equal(timeRange(today), '00:00–00:45');
+  const [yesterday] = meetingCards(events, '2026-11-20');
+  assert.equal(timeRange(yesterday), '23:30–00:45');
+  assert.deepEqual(meetingCards(events, '2026-11-22'), []);
+  // It is "on now" at 00:10 and gone from today's list once over.
+  const at = (nowMinutes) => buildTimeline({ settings: {}, events, day: DAY, weekday: SATURDAY, nowMinutes });
+  assert.equal(at(10)[0].current, true);
+  assert.deepEqual(at(50), []);
+});
+
+test('a custom routine skipped for today is read from the progress by its sequence id', () => {
+  const settings = {
+    custom_routines: [
+      { id: 'c1', name: 'Lunch reset', start_time: '12:30', activity_sequence_id: 'seq-c1', standalone_activities: [{ id: 'walk', name: 'Walk', duration_seconds: 600, activity_sequence_id: 'seq-c1' }] },
+      // An older answer without the routine's own sequence id: the habits carry it.
+      { id: 'c2', name: 'Afternoon', start_time: '15:00', standalone_activities: [{ id: 'tea', name: 'Tea', duration_seconds: 300, activity_sequence_id: 'seq-c2' }] },
+      { id: 'c3', name: 'No sequence', start_time: '17:00', standalone_activities: [{ id: 'x', name: 'X', duration_seconds: 300 }] },
+    ],
+  };
+  // The shape of GET /completed-activity-sequence/routine-progress (TodayRoutineProgress).
+  const progress = {
+    morning_routine: null,
+    evening_routine: null,
+    custom_routines: [
+      { sequence_id: 'seq-c1', status: 'completed', completed_habit_ids: [], skipped_habit_ids: [], was_force_completed: true },
+      { sequence_id: 'seq-c2', status: 'postponed', completed_habit_ids: [], skipped_habit_ids: [] },
+    ],
+    standalone_routines: [],
+  };
+  const cards = buildTimeline({ settings, progress, events: [], day: DAY, weekday: SATURDAY });
+  assert.deepEqual(cards.map((c) => [c.title, c.sequenceId, c.cancelled]), [
+    ['Lunch reset', 'seq-c1', true],
+    ['Afternoon', 'seq-c2', false],
+    ['No sequence', '', false],
+  ]);
+  const plain = buildTimeline({ settings, progress: null, events: [], day: DAY, weekday: SATURDAY });
+  assert.equal(plain[0].cancelled, false);
 });
 
 test('a new task is planned and due on the day, 10 minutes by default', () => {

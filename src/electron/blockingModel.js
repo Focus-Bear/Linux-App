@@ -298,6 +298,34 @@ export function isScheduleActive(schedule, date) {
 const levelRank = (schedule) => Math.max(0, BLOCK_LEVELS.indexOf(schedule?.block_level));
 
 /** The schedule in force at `date`: the strictest of the active ones, the first in the list on a tie. Null when none. */
+/**
+ * What can't be changed right now, because changing it would lift strict
+ * blocking that is in force (on every device: the change is saved to the account).
+ *   scheduleIds  schedules that are running with block_level strict / super-strict:
+ *                no edit, no delete until they end
+ *   listIds      the block lists those schedules use, and the list of a running
+ *                Captain / Pawfessor focus session: no rename, delete, type change
+ *                or website change
+ * `session` is the focus session ({ status, strictness, modeId }) or null.
+ */
+export function blockingLocks({ schedules, session = null, date }) {
+  const scheduleIds = new Set();
+  const listIds = new Set();
+  for (const schedule of Array.isArray(schedules) ? schedules : []) {
+    if (!schedule || levelRank(schedule) === 0 || !isScheduleActive(schedule, date)) continue;
+    scheduleIds.add(schedule.id);
+    if (schedule.focus_mode_id) listIds.add(schedule.focus_mode_id);
+  }
+  const running = session && (session.status === 'running' || session.status === 'paused');
+  if (running && (session.strictness === 'captain' || session.strictness === 'pawfessor') && session.modeId) {
+    listIds.add(session.modeId);
+  }
+  return { scheduleIds, listIds };
+}
+
+export const SCHEDULE_LOCKED = "This schedule is strict and running now. It can be changed when it ends.";
+export const LIST_LOCKED = "This block list is in use by strict blocking right now. It can be changed when that ends.";
+
 export function governingSchedule(schedules, date) {
   let best = null;
   for (const schedule of Array.isArray(schedules) ? schedules : []) {

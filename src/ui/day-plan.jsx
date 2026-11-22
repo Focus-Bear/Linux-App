@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import './styles/distracting-sites.css'; // shared .fb-input
 import './styles/day-plan.css';
 import { dayPlanApi } from '../services/dayPlanApi.js';
+import { createDayLoader } from '../services/dayPlanLoader.js';
 import { habitPlayer, reportHabit, useHabitPlayer } from '../services/habitPlayerStore.js';
-import { currentHabit } from '../services/habitPlayerModel.js';
+import { bannerHabit, currentHabit } from '../services/habitPlayerModel.js';
 import { postponeStore, usePostpone } from '../services/postponeStore.js';
 import { useSyncedState } from '../services/sync.js';
 import HabitPlayer from './habit-player.jsx';
@@ -14,6 +15,7 @@ import {
   formatSpan,
   formatTime,
   minutesOfDay,
+  overridesAfterLoad,
   remainingTaskSeconds,
   tasksForDay,
   timeRange,
@@ -22,12 +24,15 @@ import {
   POSTPONE_CHOICES,
   dayDate,
   dayLabel,
+  dayOffsetMinutes,
   defaultEventEnd,
   defaultEventStart,
   eventError,
+  finishedPostponed,
   focusBlockNote,
   isPostponed,
   postponeLabel,
+  routineSequenceId,
   shiftDay,
 } from '../services/dayPlanExtras.js';
 
@@ -115,20 +120,34 @@ function AddEventForm({ day, isToday, onAdded, onCancel }) {
  * postponed or skipped for today. Other days are a preview.
  */
 export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus }) {
-  const [data, setData] = useState(null);
-  const [status, setStatus] = useState('loading'); // loading | ready | error
+  // The day's data and the order of its loads live in dayPlanLoader.js. Another
+  // day's progress is asked with that day's UTC offset (it differs across a
+  // daylight saving change).
+  const [loader] = useState(() =>
+    createDayLoader({
+      loadDay: (target) => dayPlanApi.loadDay(target, dayOffsetMinutes(target)),
+      onError: (error) => console.error('[DayPlan] Could not load the day:', error),
+    }),
+  );
+  const view = useSyncExternalStore(loader.subscribe, loader.get);
   const [now, setNow] = useState(() => new Date());
   // The day shown; null = today (so the page follows midnight).
   const [viewDay, setViewDay] = useState(null);
   // Task changes made here, shown before (and kept if) the reload returns them.
   const [overrides, setOverrides] = useState({});
+  // When each of those was last saved (Infinity while the save runs), to tell
+  // which ones a reload can't know about yet.
+  const taskSaves = useRef({});
   const [added, setAdded] = useState([]);
   const [newTitle, setNewTitle] = useState('');
+  const [addingTask, setAddingTask] = useState(false);
+  const addingTaskRef = useRef(false);
   const [taskError, setTaskError] = useState(null);
   const [habitError, setHabitError] = useState(null);
   const [busyHabits, setBusyHabits] = useState(() => new Set());
   const [busyRoutine, setBusyRoutine] = useState(null);
   const [postponeFor, setPostponeFor] = useState(null); // card id whose postpone choices are open
+  const [confirmSkip, setConfirmSkip] = useState(null); // card id whose "skip for today?" question is open
   const [askQuantity, setAskQuantity] = useState(null); // habit being marked done that asks a question
   const [addingEvent, setAddingEvent] = useState(false);
   // The player covers the page while a routine is played; "‹ Day Plan" hides it.
@@ -142,17 +161,12 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
   const isToday = day === today;
 
   const load = useCallback(async () => {
-    setStatus((current) => (current === 'ready' ? 'ready' : 'loading'));
-    try {
-      const result = await dayPlanApi.loadDay(day, -new Date().getTimezoneOffset());
-      setData(result);
-      setAdded([]);
-      setStatus('ready');
-    } catch (error) {
-      console.error('[DayPlan] Could not load the day:', error);
-      setStatus((current) => (current === 'ready' ? 'ready' : 'error'));
-    }
-  }, [day]);
+    const startedAt = Date.now();
+    // False when the load failed or a newer one took over: then nothing changes here.
+    if (!(await loader.show(day))) return;
+    setAdded([]);
+    setOverrides((prev) => overridesAfterLoad(prev, taskSaves.current, startedAt));
+  }, [loader, day]);
 
   // `version` changes each time a habit is reported, so the day's progress is read again.
   useEffect(() => {
@@ -167,16 +181,17 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
 
   const goTo = (target) => {
     setViewDay(target === today ? null : target);
-    setData(null);
-    setStatus('loading');
     setAddingEvent(false);
     setPostponeFor(null);
+    setConfirmSkip(null);
     setHabitError(null);
     setTaskError(null);
   };
 
   // What is on screen belongs to the day shown (not the one being left).
-  const shown = data && data.day === day ? data : null;
+  const onDay = view.day === day;
+  const status = onDay ? view.status : 'loading';
+  const shown = onDay && view.data && view.data.day === day ? view.data : null;
 
   const cards = useMemo(
     () =>
@@ -198,9 +213,15 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
     [shown, day, today, isToday, now, outcomes, outcomesDay, breaksEnabled],
   );
 
+  // A postponed routine that got finished (or skipped) meanwhile needs no reminder.
+  useEffect(() => {
+    if (!isToday) return;
+    for (const id of finishedPostponed(cards, postponed)) postponeStore.clear(id);
+  }, [cards, postponed, isToday]);
+
   const playHabit = (card, habitId = null) => {
     setHabitError(null);
-    if (isPostponed(postponed, card.id, Date.now())) postponeStore.clear();
+    if (postponed[card.id]) postponeStore.clear(card.id);
     if (habitPlayer.start(card, habitId)) setPlayerOpen(true);
   };
 
@@ -234,14 +255,15 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
 
   // "Skip for today" on a routine, and its undo.
   const setRoutineSkipped = async (card, skipped) => {
-    const sequenceId = card.sequenceId || card.habits?.[0]?.sequenceId;
+    const sequenceId = routineSequenceId(card);
     if (!sequenceId || busyRoutine) return;
+    setConfirmSkip(null);
     setBusyRoutine(card.id);
     setHabitError(null);
     try {
       if (skipped) await dayPlanApi.skipRoutine(sequenceId);
       else await dayPlanApi.undoSkipRoutine(sequenceId);
-      if (skipped && isPostponed(postponed, card.id, Date.now())) postponeStore.clear();
+      if (skipped) postponeStore.clear(card.id);
       await load();
     } catch (error) {
       console.error('[DayPlan] Could not change the routine:', error);
@@ -260,7 +282,7 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
   const deleteEvent = async (card) => {
     if (!card.sourceId) return;
     setHabitError(null);
-    setData((prev) => (prev ? { ...prev, planEvents: prev.planEvents.filter((event) => event.id !== card.sourceId) } : prev));
+    loader.update((prev) => ({ ...prev, planEvents: prev.planEvents.filter((event) => event.id !== card.sourceId) }));
     try {
       await dayPlanApi.deleteEvent(card.sourceId);
     } catch (error) {
@@ -272,37 +294,44 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
 
   const tasks = useMemo(() => {
     if (!shown) return [];
-    const merged = [...shown.tasks, ...added].map((task) =>
-      task.id in overrides ? { ...task, status: overrides[task.id] ? 'COMPLETED' : 'NOT_STARTED' } : task,
-    );
-    return tasksForDay(merged, day, today);
+    return tasksForDay([...shown.tasks, ...added], day, today, { overrides });
   }, [shown, added, overrides, day, today]);
 
   const toggleTask = async (task) => {
     const completed = !task.completed;
     setTaskError(null);
     setOverrides((prev) => ({ ...prev, [task.id]: completed }));
+    taskSaves.current[task.id] = Infinity;
     try {
       await dayPlanApi.setTaskCompleted(task, completed);
     } catch (error) {
       console.error('[DayPlan] Could not update the task:', error);
       setOverrides((prev) => ({ ...prev, [task.id]: !completed }));
       setTaskError(SAVE_FAILED);
+    } finally {
+      taskSaves.current[task.id] = Date.now();
     }
   };
 
   const addTask = async (event) => {
     event.preventDefault();
     const title = newTitle.trim();
-    if (!title) return;
+    // One at a time: Enter pressed twice must not create the task twice.
+    if (!title || addingTaskRef.current) return;
+    addingTaskRef.current = true;
+    setAddingTask(true);
     setTaskError(null);
     try {
       const created = await dayPlanApi.addTask(title, day);
-      if (created?.id) setAdded((prev) => [...prev, created]);
       setNewTitle('');
+      if (created?.id) setAdded((prev) => [...prev, created]);
+      else load(); // saved, but the answer didn't say as what: read the list again
     } catch (error) {
       console.error('[DayPlan] Could not add the task:', error);
       setTaskError("Couldn't add that task. Check your connection and try again.");
+    } finally {
+      addingTaskRef.current = false;
+      setAddingTask(false);
     }
   };
 
@@ -323,7 +352,10 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
     );
   }
 
-  const playing = player && player.phase !== 'finished' ? currentHabit(player) : null;
+  // The banner names the habit that is playing, or between habits the next one.
+  const playing = bannerHabit(player);
+  // Done / Skip on the row of the habit that is counting down belong to the player.
+  const running = player && player.phase === 'running' ? currentHabit(player) : null;
   const dayName = isToday ? 'today' : dayLabel(day, today).split(' · ').pop();
 
   return (
@@ -397,7 +429,7 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
             )}
 
             {cards.map((card) => {
-              const waiting = card.habits && isToday && isPostponed(postponed, card.id, now.getTime());
+              const waiting = card.habits && isToday && isPostponed(postponed[card.id], card.id, now.getTime());
               return (
                 <article
                   key={card.id}
@@ -436,7 +468,7 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
                       </button>
                     )}
                     {card.habits && !card.cancelled && card.allDone && <span className="fb-pill fb-pill--ok">✅ Habits done</span>}
-                    {waiting && <span className="fb-pill">{postponeLabel(postponed)}</span>}
+                    {waiting && <span className="fb-pill">{postponeLabel(postponed[card.id])}</span>}
                     {card.habits && isToday && !card.cancelled && !card.allDone && !player && (
                       <button type="button" className="fb-btn fb-btn--primary fb-btn--small" onClick={() => playHabit(card)}>
                         {card.openCount === card.habits.length ? 'Start routine now' : 'Continue routine'}
@@ -446,7 +478,20 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
 
                   {card.habits && isToday && !card.cancelled && !card.allDone && (
                     <div className="fb-dayplan__routine-actions">
-                      {postponeFor === card.id ? (
+                      {confirmSkip === card.id ? (
+                        <span className="fb-row" role="group" aria-label={`Skip ${card.title} for today?`}>
+                          <span className="fb-dayplan__span">Skip this routine for today? Its habits won&apos;t be asked for again today.</span>
+                          <button
+                            type="button"
+                            className="fb-btn fb-btn--small"
+                            onClick={() => setRoutineSkipped(card, true)}
+                            disabled={busyRoutine === card.id || Boolean(player)}
+                          >
+                            Skip routine
+                          </button>
+                          <button type="button" className="fb-btn fb-btn--gray fb-btn--small" onClick={() => setConfirmSkip(null)}>Cancel</button>
+                        </span>
+                      ) : postponeFor === card.id ? (
                         <span className="fb-row" role="group" aria-label={`Postpone ${card.title} by`}>
                           <span className="fb-dayplan__span">Remind me in</span>
                           {POSTPONE_CHOICES.map((minutes) => (
@@ -462,16 +507,19 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
                             {waiting ? 'Postpone again' : 'Postpone'}
                           </button>
                           {waiting && (
-                            <button type="button" className="fb-dayplan__link" onClick={() => postponeStore.clear()}>Cancel the reminder</button>
+                            <button type="button" className="fb-dayplan__link" onClick={() => postponeStore.clear(card.id)}>Cancel the reminder</button>
                           )}
-                          <button
-                            type="button"
-                            className="fb-dayplan__link"
-                            onClick={() => setRoutineSkipped(card, true)}
-                            disabled={busyRoutine === card.id || Boolean(player)}
-                          >
-                            Skip routine for today
-                          </button>
+                          {/* Needs the routine's sequence id; without it the server can't be told. */}
+                          {routineSequenceId(card) && (
+                            <button
+                              type="button"
+                              className="fb-dayplan__link"
+                              onClick={() => setConfirmSkip(card.id)}
+                              disabled={busyRoutine === card.id || Boolean(player)}
+                            >
+                              Skip routine for today
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -510,7 +558,7 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
                                 type="button"
                                 className="fb-btn fb-btn--small"
                                 onClick={() => markHabit(habit, 'done')}
-                                disabled={busyHabits.has(habit.id) || playing?.id === habit.id}
+                                disabled={busyHabits.has(habit.id) || running?.id === habit.id}
                                 aria-label={`Mark ${habit.name} done`}
                               >
                                 Done
@@ -519,7 +567,7 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
                                 type="button"
                                 className="fb-btn fb-btn--gray fb-btn--small"
                                 onClick={() => markHabit(habit, 'skipped')}
-                                disabled={busyHabits.has(habit.id) || playing?.id === habit.id}
+                                disabled={busyHabits.has(habit.id) || running?.id === habit.id}
                                 aria-label={`Skip ${habit.name} for today`}
                               >
                                 Skip
@@ -586,8 +634,8 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
                 aria-label={`Add a task for ${dayName}`}
                 maxLength={255}
               />
-              <button type="submit" className="fb-btn fb-btn--primary" disabled={!newTitle.trim()}>
-                Add task
+              <button type="submit" className="fb-btn fb-btn--primary" disabled={!newTitle.trim() || addingTask}>
+                {addingTask ? 'Adding…' : 'Add task'}
               </button>
             </form>
             <button type="button" className="fb-btn fb-btn--block fb-dayplan__todo" onClick={onOpenTodoList}>
@@ -601,7 +649,7 @@ export default function DayPlanPage({ onOpenTodoList, onEditHabits, onStartFocus
                 onCancel={() => setAddingEvent(false)}
                 onAdded={(created) => {
                   setAddingEvent(false);
-                  if (created) setData((prev) => (prev ? { ...prev, planEvents: [...prev.planEvents, created] } : prev));
+                  if (created) loader.update((prev) => ({ ...prev, planEvents: [...prev.planEvents, created] }));
                   else load();
                 }}
               />

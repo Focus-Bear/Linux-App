@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useSyncExternalStore } from 'react';
 import { nativeAuthService } from '../services/nativeAuth.js';
 import { addEntry, keywordsOf, normaliseKeyword, removeFromView, sitesOf } from './blocklist.js';
 import { SYNC, createSettingsSync } from './settingsSyncCore.js';
+import { effectiveImmediateBlock } from '../electron/blockSettings.js';
 
 const SYNCED_STATES = {
   selectedBlockMode: 'manual',
@@ -54,7 +55,15 @@ const auth0Sync = createSettingsSync({
   // What the browser extensions block follows the settings in force.
   onApply: (key, value) => {
     if (key === 'urlList') window.api?.exportList?.((Array.isArray(value) ? value : []).join('\n'));
-    if (key === 'immediatelyBlock') window.api?.setBlockSettings?.({ immediatelyBlock: Boolean(value) });
+    // "Immediately block" or Grizzly Bear mode: no temporary unblocks.
+    if (key === 'immediatelyBlock' || key === 'selectedBearMode') {
+      window.api?.setBlockSettings?.({
+        immediatelyBlock: effectiveImmediateBlock({
+          immediatelyBlock: auth0Sync.getValue('immediatelyBlock'),
+          selectedBearMode: auth0Sync.getValue('selectedBearMode'),
+        }),
+      });
+    }
   },
 });
 

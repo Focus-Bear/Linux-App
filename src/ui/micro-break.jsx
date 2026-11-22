@@ -31,6 +31,8 @@ export default function MicroBreakPage({ breaks, onEditHabits, onOpenSettings, o
   // Opening the page reads the break habits again (they are edited on the dashboard page).
   useEffect(() => {
     breakStore.load();
+    // A break finished earlier and left open is not what "Start Micro Break" should show.
+    breakStore.dismissFinished();
   }, []);
 
   if (player && player.phase === 'finished') return <BreakFinished breaks={breaks} onLeave={onLeave} />;

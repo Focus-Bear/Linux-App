@@ -89,7 +89,10 @@ test('an existing default block list is reused, with no request', async () => {
 
 test('the reflection is attached to the finished row', async () => {
   const { api: focusApi, calls } = api([
-    [200, [{ id: 'row-9', focus_mode: { id: 'mode 1' } }]],
+    [200, [
+      { id: 'row-8', focus_mode: { id: 'mode 1' }, start_time: '2026-11-20T09:00:00.000Z' }, // yesterday, same block list
+      { id: 'row-9', focus_mode: { id: 'mode 1' }, start_time: '2026-11-21T09:00:00.000Z' },
+    ]],
     [200, {}],
   ]);
   assert.equal(await focusApi.saveReflection(session(), { achievements: 'Two pages', stars: 4 }), true);
@@ -107,6 +110,35 @@ test('nothing is sent for an empty reflection, and a missing row is reported', a
   const missing = api([[200, []]]);
   assert.equal(await missing.api.saveReflection(session(), { stars: 3 }), false);
   assert.equal(missing.calls.length, 1);
+});
+
+test("a reflection is not put on the previous session's row when this one never reached the server", async () => {
+  const { api: focusApi, calls } = api([[200, [{ id: 'row-8', focus_mode: { id: 'mode 1' }, start_time: '2026-11-20T09:00:00.000Z' }]]]);
+  assert.equal(await focusApi.saveReflection(session(), { achievements: 'Wrong row', stars: 5 }), false);
+  assert.equal(calls.length, 1, 'no PATCH');
+});
+
+test('a failed load of the block lists never creates a second default list', async () => {
+  const existing = { id: 'd', name: 'Block super distracting sites/apps', metadata: { isDefault: true } };
+  // The start screen's GET failed (modes: null). Start reads the lists again: the default is there.
+  const retry = api([[200, [existing]]]);
+  assert.equal((await retry.api.resolveMode({ modes: null, modeId: '' })).id, 'd');
+  assert.deepEqual(retry.calls.map((call) => call.method), ['GET'], 'no POST /focus-mode');
+
+  // Still unreachable: it throws and nothing is created (the session starts unsynced).
+  const down = api([[502, 'bad gateway']]);
+  await assert.rejects(down.api.resolveMode({ modes: null, modeId: '' }), (error) => error.status === 502);
+  assert.deepEqual(down.calls.map((call) => call.method), ['GET']);
+
+  // A load that worked and found no default list: only then is one created.
+  const fresh = api([[201, {}]]);
+  assert.equal((await fresh.api.resolveMode({ modes: [], modeId: '' })).id, 'new-id');
+  assert.deepEqual(fresh.calls.map((call) => call.method), ['POST']);
+
+  // The chosen list is used as it is.
+  const chosen = api([]);
+  assert.equal((await chosen.api.resolveMode({ modes: [existing, { id: 'w', name: 'Work' }], modeId: 'w' })).id, 'w');
+  assert.equal(chosen.calls.length, 0);
 });
 
 test('a server error is thrown with its status', async () => {

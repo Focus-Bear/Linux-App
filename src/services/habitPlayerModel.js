@@ -47,6 +47,32 @@ export function nextHabit(player) {
   return player ? player.queue[player.index + 1] || null : null;
 }
 
+/**
+ * The habit the Day Plan's "routine in progress" banner names: the one that is
+ * playing, or between habits the one that comes next (the current one has just
+ * finished). Null once the routine is over.
+ */
+export function bannerHabit(player) {
+  if (!player || player.phase === 'finished') return null;
+  return player.phase === 'between' ? nextHabit(player) : currentHabit(player);
+}
+
+/**
+ * Takes a habit that is still waiting its turn out of the queue. Used when it
+ * was marked Done or Skipped on its Day Plan row while the routine plays: the
+ * queue is a snapshot taken at Start, and playing the habit later would report
+ * it a second time. The habit that is playing (or just finished) stays.
+ */
+export function dropQueued(player, habitId) {
+  if (!player || player.phase === 'finished') return player;
+  const at = player.queue.findIndex((habit, index) => index > player.index && habit.id === habitId);
+  if (at < 0) return player;
+  const queue = player.queue.filter((_, index) => index !== at);
+  // Between habits with nothing left to start, the routine is over.
+  const over = player.phase === 'between' && !queue[player.index + 1];
+  return { ...player, queue, phase: over ? 'finished' : player.phase };
+}
+
 export function isPaused(player) {
   return Boolean(player) && player.phase === 'running' && player.pausedAt !== null;
 }

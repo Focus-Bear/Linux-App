@@ -6,13 +6,16 @@
 // the account again, the edit is applied to that fresh copy and only that
 // list is sent (blockingApiCore.js `updateList`). The window's copy can be
 // 15 minutes old, so it is never what gets written.
-import { withEntries, withKind, withName } from '../electron/blockingModel.js';
+import { LIST_LOCKED, SCHEDULE_LOCKED, withEntries, withKind, withName } from '../electron/blockingModel.js';
 
 export const SAVE_FAILED = "Couldn't save that. Check your connection and try again.";
 export const LIST_GONE = 'That block list was deleted on another device.';
 
 export function createBlockingStore({
   api,
+  // () => { scheduleIds: Set, listIds: Set }: what strict blocking in force
+  // forbids changing right now (blockingModel.js `blockingLocks`).
+  getLocks = () => ({ scheduleIds: new Set(), listIds: new Set() }),
   saveDelayMs = 600,
   setTimer = (fn, ms) => setTimeout(fn, ms),
   clearTimer = (id) => clearTimeout(id),
@@ -32,6 +35,18 @@ export function createBlockingStore({
   // id -> the edits made here that the account doesn't have yet, in order.
   const pending = new Map();
   let generation = 0;
+  let locks = getLocks;
+
+  const listLocked = (id) => {
+    if (!locks().listIds.has(id)) return false;
+    set({ error: LIST_LOCKED });
+    return true;
+  };
+  const scheduleLocked = (id) => {
+    if (!locks().scheduleIds.has(id)) return false;
+    set({ error: SCHEDULE_LOCKED });
+    return true;
+  };
 
   function set(patch) {
     state = { ...state, ...patch };
@@ -80,6 +95,7 @@ export function createBlockingStore({
   }
 
   function replaceMode(id, change) {
+    if (listLocked(id)) return;
     pending.set(id, [...(pending.get(id) || []), change]);
     set({ modes: state.modes.map((mode) => (mode && mode.id === id ? change(mode) : mode)), error: null });
     queueSave();
@@ -133,6 +149,7 @@ export function createBlockingStore({
 
     /** Deletes a list; it is put back if the server refuses. */
     async deleteList(id) {
+      if (listLocked(id)) return false;
       const before = state.modes;
       pending.delete(id);
       set({ modes: before.filter((mode) => mode.id !== id), error: null });
@@ -148,6 +165,7 @@ export function createBlockingStore({
 
     /** Creates or updates a schedule; false when the server refused. */
     async saveSchedule(draft, existing = null) {
+      if (existing && scheduleLocked(existing.id)) return false;
       try {
         const saved = await api.saveSchedule(draft, existing);
         set({
@@ -164,6 +182,7 @@ export function createBlockingStore({
     },
 
     async deleteSchedule(id) {
+      if (scheduleLocked(id)) return false;
       const before = state.schedules;
       set({ schedules: before.filter((schedule) => schedule.id !== id), error: null });
       try {
@@ -196,6 +215,11 @@ export function createBlockingStore({
       pending.clear();
       loading = null;
       set({ status: 'loading', modes: [], schedules: [], error: null, stale: false });
+    },
+
+    /** The shell passes the current locks in (it knows the session and the time). */
+    setLocks(next) {
+      locks = typeof next === 'function' ? next : getLocks;
     },
 
     clearError: () => set({ error: null }),

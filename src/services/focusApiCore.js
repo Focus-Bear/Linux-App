@@ -18,6 +18,7 @@ import {
   findSummaryRow,
   finishBody,
   pickDefaultMode,
+  selectableModes,
   reflectionBody,
   scheduledFinishBody,
   startBody,
@@ -68,9 +69,24 @@ export function createFocusApi({ fetch, getToken, baseUrl = API_BASE_URL, newId 
     return body;
   }
 
+  /**
+   * The block list a new session uses: the chosen one, else the account's
+   * default (created when the account has none). `modes` is what the start
+   * screen loaded, or null when that load failed. A failed load is not "the
+   * account has no lists": the lists are read again, and when that fails too
+   * this throws and nothing is created (the session then starts unsynced).
+   * Creating on a failed load gave accounts a second default list.
+   */
+  async function resolveMode({ modes, modeId }) {
+    const list = Array.isArray(modes) ? modes : await getFocusModes();
+    const chosen = selectableModes(list).find((mode) => mode.id === modeId);
+    return chosen || ensureDefaultMode(list);
+  }
+
   return {
     getFocusModes,
     ensureDefaultMode,
+    resolveMode,
 
     /** Unfinished to-dos to pick from on the start screen: in progress first (smart order). */
     async getCandidateTasks(take = 20) {
@@ -118,7 +134,7 @@ export function createFocusApi({ fetch, getToken, baseUrl = API_BASE_URL, newId 
       const body = reflectionBody(reflection);
       if (!body) return false;
       const rows = await request('GET', '/user/weekly-focus-block-summary?limit=5&offset=0');
-      const row = findSummaryRow(rows, session.modeId);
+      const row = findSummaryRow(rows, session.modeId, session.startTime);
       if (!row) return false;
       await request('PATCH', `/user/weekly-focus-block-summary/${encodeURIComponent(row.id)}`, body);
       return true;

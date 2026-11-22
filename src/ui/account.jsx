@@ -18,7 +18,7 @@ const SYNC_STATUS = {
  * cloud sync, password reset, sign out and deleting the account, like the
  * Windows Account tab (Preferences/SettingsTab/AccountTab.xaml.cs).
  */
-const AccountPage = function ({ user, syncStatus = 'idle', onForceSync, onLogout }) {
+const AccountPage = function ({ user, syncStatus = 'idle', onForceSync, onLogout, sessionLock = '' }) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [userId, setUserId] = useState('');
   const [copied, setCopied] = useState(false);
@@ -139,9 +139,14 @@ const AccountPage = function ({ user, syncStatus = 'idle', onForceSync, onLogout
             </button>
           </div>
         )}
-        <button type="button" className="fb-btn fb-btn--gray" onClick={handleLogout} disabled={isLoggingOut}>
+        <button type="button" className="fb-btn fb-btn--gray" onClick={handleLogout} disabled={isLoggingOut || Boolean(sessionLock)}>
           {isLoggingOut ? 'Signing out…' : 'Sign out'}
         </button>
+        {sessionLock && (
+          <p className="fb-card__desc" style={{ margin: '10px 0 0' }} role="status">
+            A {sessionLock} focus session is running. Signing out would end its blocking, so end the session first.
+          </p>
+        )}
       </section>
 
       <section className="fb-card" aria-labelledby="account-sync">
@@ -204,7 +209,7 @@ const AccountPage = function ({ user, syncStatus = 'idle', onForceSync, onLogout
           Deletes your Focus Bear account and everything in it: habits, tasks, notes, stats and settings, on every device.
           This can&apos;t be undone.
         </p>
-        <button type="button" className="fb-btn fb-btn--danger" onClick={() => setDeleting(true)}>
+        <button type="button" className="fb-btn fb-btn--danger" onClick={() => setDeleting(true)} disabled={Boolean(sessionLock)}>
           Delete Account…
         </button>
       </section>

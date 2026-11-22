@@ -4,8 +4,10 @@ import './styles/settings-extra.css';
 
 /**
  * Settings > Strictness. Cuddly or Grizzly Bear (kCuddlyModeEnabled, shared
- * with the other Focus Bear apps). On Linux it decides the strictness a new
- * focus session starts on; the level can still be changed for each session.
+ * with the other Focus Bear apps, where Grizzly means a blocked site can't be
+ * let through for a while). On Linux it does the same (the extensions drop
+ * "Unblock temporarily") and sets the strictness a new focus session is
+ * offered on when no level was picked before, as on Windows and Mac.
  */
 export default function SettingsStrictnessPage({ onOpenFocus }) {
   const [saved, setSaved, isLoading] = useSyncedState('selectedBearMode');
@@ -35,8 +37,9 @@ export default function SettingsStrictnessPage({ onOpenFocus }) {
           ))}
         </div>
         <p className="fb-card__desc" style={{ margin: '14px 0 0' }}>
-          Saved to your account, so your other devices use it too. The level you picked last on the start screen is
-          offered first after that.{' '}
+          This is the same Cuddly / Grizzly setting as in the Mac and Windows apps: it is saved to your account and
+          changes how they block too. For focus sessions, the level you picked last on the start screen is offered
+          first.{' '}
           {onOpenFocus && (
             <button type="button" className="fb-settings__link" onClick={onOpenFocus}>Start a focus session</button>
           )}

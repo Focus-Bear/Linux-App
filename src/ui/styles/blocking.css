@@ -79,6 +79,13 @@
     margin-bottom: 12px;
 }
 
+.fb-blocking__readonly {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--fb-text);
+  line-height: 1.8;
+}
+
 .fb-blocking__note {
     margin: 10px 0 0;
     font-size: 13px;

@@ -6,6 +6,10 @@ import { quantityAnswers, quantityError } from '../services/dayPlanExtras.js';
  * Asked when a habit that logs a quantity is done ("How many pages did you
  * read?"), like the Windows DayPlanLogQuantityWindow. onSubmit(answers) gets
  * the log_quantity_answers; an empty field leaves its question out.
+ *
+ * The fields are text fields on purpose: a number field hands back '' for
+ * text it can't read ("1,5", "12-"), which was then saved as "no answer".
+ * quantityError checks what was really typed and accepts a decimal comma.
  */
 export default function QuantityDialog({ habit, onSubmit, onCancel }) {
   const [values, setValues] = useState({});
@@ -43,11 +47,9 @@ export default function QuantityDialog({ habit, onSubmit, onCancel }) {
               <input
                 id={`quantity-${question.id}`}
                 className="fb-input"
-                type="number"
+                type="text"
                 inputMode="decimal"
-                step="any"
-                min={question.min ?? undefined}
-                max={question.max !== null && question.max > (question.min ?? -Infinity) ? question.max : undefined}
+                autoComplete="off"
                 value={values[question.id] ?? ''}
                 onChange={(e) => setValues((prev) => ({ ...prev, [question.id]: e.target.value }))}
                 autoFocus={index === 0}

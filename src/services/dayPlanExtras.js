@@ -30,6 +30,16 @@ export function dayLabel(day, today) {
   return date;
 }
 
+/**
+ * Minutes east of UTC on `day` (at noon, clear of the hour a clock change
+ * happens), for the `timezone` of the routine-progress call. Today's offset is
+ * an hour off for a day on the other side of a daylight saving change.
+ */
+export function dayOffsetMinutes(day, offsetOf = (date) => -date.getTimezoneOffset()) {
+  const [y, m, d] = day.split('-').map(Number);
+  return offsetOf(new Date(y, m - 1, d, 12));
+}
+
 // --- focus blocks ---------------------------------------------------------------
 
 export const MIN_FOCUS_BLOCK_MINUTES = 20;
@@ -138,11 +148,21 @@ export function habitQuestions(activity) {
     }));
 }
 
-/** Why a typed value isn't a usable answer, or null. An empty answer is allowed (the question is left out). */
-export function quantityError(question, value) {
+/**
+ * The number typed into an answer field: null when empty, NaN when it isn't a
+ * number. A decimal comma is accepted ("1,5"), as most of Europe types it.
+ */
+export function parseQuantity(value) {
   const text = String(value ?? '').trim();
   if (!text) return null;
-  const n = Number(text);
+  if (!/^[+-]?(\d+([.,]\d*)?|[.,]\d+)$/.test(text)) return NaN;
+  return Number(text.replace(',', '.'));
+}
+
+/** Why a typed value isn't a usable answer, or null. An empty answer is allowed (the question is left out). */
+export function quantityError(question, value) {
+  const n = parseQuantity(value);
+  if (n === null) return null;
   if (!Number.isFinite(n)) return 'Type a number.';
   if (question.min !== null && n < question.min) return `Use ${question.min} or more.`;
   if (question.max !== null && question.max > (question.min ?? -Infinity) && n > question.max) return `Use ${question.max} or less.`;
@@ -153,9 +173,9 @@ export function quantityError(question, value) {
 export function quantityAnswers(questions, values) {
   const answers = [];
   for (const question of Array.isArray(questions) ? questions : []) {
-    const text = String(values?.[question.id] ?? '').trim();
-    if (!text || quantityError(question, text)) continue;
-    answers.push({ question_id: question.id, logged_value: Number(text) });
+    const n = parseQuantity(values?.[question.id]);
+    if (n === null || quantityError(question, values?.[question.id])) continue;
+    answers.push({ question_id: question.id, logged_value: n });
   }
   return answers;
 }
@@ -167,6 +187,23 @@ export function routineState(progress, kind) {
   const node = progress && typeof progress === 'object' ? progress[`${kind}_routine`] : null;
   if (!node || typeof node !== 'object') return { sequenceId: '', cancelled: false };
   return { sequenceId: node.sequence_id || '', cancelled: node.was_force_completed === true };
+}
+
+/**
+ * The same for a custom routine. The progress lists custom routines in
+ * `custom_routines` (RoutineProgressItem[]), each with its `sequence_id`; the
+ * settings give that id as the routine's `activity_sequence_id`.
+ */
+export function customRoutineState(progress, sequenceId) {
+  if (!sequenceId) return { sequenceId: '', cancelled: false };
+  const lists = [progress?.custom_routines, progress?.standalone_routines];
+  const node = lists.flatMap((list) => (Array.isArray(list) ? list : [])).find((item) => item && item.sequence_id === sequenceId);
+  return { sequenceId, cancelled: node?.was_force_completed === true };
+}
+
+/** The sequence id the skip / undo calls need for a routine card ('' when it isn't known). */
+export function routineSequenceId(card) {
+  return (card && (card.sequenceId || card.habits?.[0]?.sequenceId)) || '';
 }
 
 /** Body of the force-complete ("Skip routine for today") and uncomplete (undo) calls. */
@@ -195,6 +232,45 @@ export function readPostpone(stored, now) {
   if (!entry || typeof entry !== 'object' || !entry.cardId || !Number.isFinite(entry.until)) return null;
   if (entry.day !== dayKey(new Date(now))) return null;
   return entry;
+}
+
+/**
+ * Every postponed routine that is still for today, by card id. One entry per
+ * routine, so postponing the evening routine doesn't replace the morning one.
+ * Also reads the single entry older versions stored.
+ */
+export function readPostponed(stored, now) {
+  let value = stored;
+  if (typeof stored === 'string') {
+    try {
+      value = JSON.parse(stored);
+    } catch {
+      return {};
+    }
+  }
+  if (!value || typeof value !== 'object') return {};
+  const entries = {};
+  for (const item of value.cardId ? [value] : Object.values(value)) {
+    const entry = readPostpone(item, now);
+    if (entry) entries[entry.cardId] = entry;
+  }
+  return entries;
+}
+
+/** The postponed routine whose reminder comes first, or null. */
+export function nextPostponed(entries) {
+  let first = null;
+  for (const entry of Object.values(entries || {})) {
+    if (!first || entry.until < first.until) first = entry;
+  }
+  return first;
+}
+
+/** Card ids of postponed routines that are over (all habits done or skipped): they need no reminder. */
+export function finishedPostponed(cards, entries) {
+  return (Array.isArray(cards) ? cards : [])
+    .filter((card) => card && card.habits && (card.allDone || card.cancelled) && entries?.[card.id])
+    .map((card) => card.id);
 }
 
 /** True while the routine's reminder time hasn't come yet. */

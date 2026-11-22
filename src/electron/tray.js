@@ -67,7 +67,7 @@ function init() {
 
     el('focus-pause').addEventListener('click', (event) => {
         const action = event.currentTarget.dataset.action;
-        if (action === 'pause') api?.focusSession?.pause?.().then(setSession);
+        if (action === 'pause') api?.focusSession?.pauseFromTray?.();
         if (action === 'resume') api?.focusSession?.resume?.().then(setSession);
     });
 

@@ -285,16 +285,21 @@ test('free text is cut to the server limit before encoding', () => {
   assert.equal(encodeText('  hi  '), 'hi');
 });
 
-test('the reflection goes onto the newest finished row for the same block list', () => {
+test("the reflection goes onto this session's row: same block list and same start, never the previous session's", () => {
+  const start = Date.UTC(2026, 10, 22, 9, 0, 0);
   const rows = [
-    { id: 'r1', focus_mode: { id: 'other' } },
-    { id: 'r2', focus_mode: { id: 'mode-1' }, metadata: { is_manual: true } },
-    { id: 'r3', focus_mode: { id: 'mode-1' }, metadata: {} },
-    { id: 'r4', focus_mode: { id: 'mode-1' } },
+    { id: 'r1', focus_mode: { id: 'other' }, start_time: '2026-11-22T09:00:00.000Z' },
+    { id: 'r2', focus_mode: { id: 'mode-1' }, start_time: '2026-11-22T09:00:00.000Z', metadata: { is_manual: true } },
+    { id: 'r3', focus_mode: { id: 'mode-1' }, start_time: '2026-11-22T09:00:00.400Z', metadata: {} },
+    { id: 'r4', focus_mode: { id: 'mode-1' }, start_time: '2026-11-22T07:30:00.000Z' }, // an earlier session on the same list
   ];
-  assert.equal(findSummaryRow(rows, 'mode-1').id, 'r3');
-  assert.equal(findSummaryRow(rows, 'missing'), null);
-  assert.equal(findSummaryRow(null, 'mode-1'), null);
+  assert.equal(findSummaryRow(rows, 'mode-1', start).id, 'r3');
+  assert.equal(findSummaryRow(rows, 'missing', start), null);
+  assert.equal(findSummaryRow(null, 'mode-1', start), null);
+  // This session's finish never reached the server: its row isn't there, and
+  // the earlier session on the same block list must not get the reflection.
+  assert.equal(findSummaryRow([rows[3]], 'mode-1', start), null);
+  assert.equal(findSummaryRow([{ id: 'r5', focus_mode: { id: 'mode-1' } }], 'mode-1', start), null);
 });
 
 test('reflection body has only what the user filled in', () => {
