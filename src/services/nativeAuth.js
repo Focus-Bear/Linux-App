@@ -10,11 +10,6 @@ class NativeAuthService {
       ? 'http://localhost:5173/callback'
       : 'http://localhost/callback';
 
-    console.log('[NativeAuth] Initializing with config:');
-    console.log('  - Domain:', this.domain);
-    console.log('  - Client ID:', this.clientId);
-    console.log('  - Redirect URI:', this.redirectUri);
-    console.log('  - Is packaged:', !isDev);
 
     if (!this.domain || !this.clientId) {
       console.error('[NativeAuth] CRITICAL: Missing Auth0 configuration!');
@@ -29,45 +24,63 @@ class NativeAuthService {
     this.user = null;
     this.tokenExpiry = null;
 
-    this.loadTokensFromStorage();
+    // The saved sign-in is read from the main process (see below); everything
+    // that needs it waits for `ready`.
+    this.ready = this.loadTokensFromStorage();
   }
 
-  loadTokensFromStorage() {
+  // The tokens are kept by the main process, encrypted with the desktop's
+  // keyring (src/electron/tokenVault.js), not in localStorage where they sat
+  // as plain text. A sign-in saved by an older version is moved over once.
+  // Without a usable keyring API the old place is kept, so nobody is signed
+  // out by the update.
+  async loadTokensFromStorage() {
+    const vault = window.api?.authTokens;
     try {
-      const storedAccessToken = localStorage.getItem('auth_access_token');
-      const storedRefreshToken = localStorage.getItem('auth_refresh_token');
-      const storedIdToken = localStorage.getItem('auth_id_token');
-      const storedUser = localStorage.getItem('auth_user');
-      const storedExpiry = localStorage.getItem('auth_token_expiry');
-
-      if (storedAccessToken) this.accessToken = storedAccessToken;
-      if (storedRefreshToken) this.refreshToken = storedRefreshToken;
-      if (storedIdToken) this.idToken = storedIdToken;
-      if (storedUser) this.user = JSON.parse(storedUser);
-      if (storedExpiry) this.tokenExpiry = parseInt(storedExpiry, 10);
+      const saved = vault ? await vault.load() : null;
+      if (saved) {
+        this.applyTokens(saved);
+        LEGACY_TOKEN_KEYS.forEach((key) => localStorage.removeItem(key));
+        return;
+      }
+      const legacy = readLegacyTokens();
+      if (!legacy) return;
+      this.applyTokens(legacy);
+      if (vault && (await vault.save(legacy))) LEGACY_TOKEN_KEYS.forEach((key) => localStorage.removeItem(key));
     } catch (error) {
-      console.error('Failed to load tokens from storage:', error);
+      console.error('Failed to load the saved sign-in:', error?.message || error);
     }
+  }
+
+  applyTokens(tokens) {
+    this.accessToken = tokens.accessToken || null;
+    this.refreshToken = tokens.refreshToken || null;
+    this.idToken = tokens.idToken || null;
+    this.user = tokens.user || null;
+    this.tokenExpiry = tokens.tokenExpiry || null;
   }
 
   saveTokensToStorage() {
-    try {
-      if (this.accessToken) localStorage.setItem('auth_access_token', this.accessToken);
-      if (this.refreshToken) localStorage.setItem('auth_refresh_token', this.refreshToken);
-      if (this.idToken) localStorage.setItem('auth_id_token', this.idToken);
-      if (this.user) localStorage.setItem('auth_user', JSON.stringify(this.user));
-      if (this.tokenExpiry) localStorage.setItem('auth_token_expiry', this.tokenExpiry.toString());
-    } catch (error) {
-      console.error('Failed to save tokens to storage:', error);
-    }
+    if (!this.accessToken) return;
+    const tokens = {
+      accessToken: this.accessToken,
+      refreshToken: this.refreshToken,
+      idToken: this.idToken,
+      user: this.user,
+      tokenExpiry: this.tokenExpiry,
+    };
+    const vault = window.api?.authTokens;
+    Promise.resolve(vault ? vault.save(tokens) : false)
+      .then((kept) => {
+        if (kept) LEGACY_TOKEN_KEYS.forEach((key) => localStorage.removeItem(key));
+        else writeLegacyTokens(tokens); // no keyring API: as before
+      })
+      .catch((error) => console.error('Failed to save the sign-in:', error?.message || error));
   }
 
   clearTokensFromStorage() {
-    localStorage.removeItem('auth_access_token');
-    localStorage.removeItem('auth_refresh_token');
-    localStorage.removeItem('auth_id_token');
-    localStorage.removeItem('auth_user');
-    localStorage.removeItem('auth_token_expiry');
+    LEGACY_TOKEN_KEYS.forEach((key) => localStorage.removeItem(key));
+    window.api?.authTokens?.clear?.()?.catch?.(() => {});
   }
 
   async login() {
@@ -98,7 +111,6 @@ class NativeAuthService {
         `code_challenge=${codeChallenge}&` +
         `code_challenge_method=${codeChallengeMethod}`;
 
-      console.log('[NativeAuth] Opening auth window with URL:', authUrl);
       if (window.api && window.api.openAuthWindow) {
         window.api.openAuthWindow(authUrl);
       } else {
@@ -113,8 +125,6 @@ class NativeAuthService {
 
   async handleRedirectCallback() {
     try {
-      console.log('[NativeAuth] Handling redirect callback...');
-      console.log('[NativeAuth] Current URL:', window.location.href);
 
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
@@ -256,6 +266,7 @@ class NativeAuthService {
   }
 
   async getToken() {
+    await this.ready;
     if (!this.accessToken) {
       return null;
     }
@@ -272,6 +283,7 @@ class NativeAuthService {
   }
 
   async isAuthenticated() {
+    await this.ready;
     if (!this.accessToken) {
       return false;
     }
@@ -279,7 +291,7 @@ class NativeAuthService {
     try {
       await this.getToken();
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -300,7 +312,6 @@ class NativeAuthService {
         `client_id=${encodeURIComponent(this.clientId)}&` +
         `returnTo=${encodeURIComponent(returnUrl)}`;
 
-      console.log('[NativeAuth] Logging out from Auth0, redirecting to:', logoutUrl);
       window.location.href = logoutUrl;
     } catch (error) {
       console.error('[NativeAuth] Logout failed:', error);
@@ -315,6 +326,38 @@ class NativeAuthService {
     this.user = null;
     this.tokenExpiry = null;
     this.clearTokensFromStorage();
+  }
+}
+
+const LEGACY_TOKEN_KEYS = ['auth_access_token', 'auth_refresh_token', 'auth_id_token', 'auth_user', 'auth_token_expiry'];
+
+function readLegacyTokens() {
+  try {
+    const accessToken = localStorage.getItem('auth_access_token');
+    if (!accessToken) return null;
+    const user = localStorage.getItem('auth_user');
+    const expiry = localStorage.getItem('auth_token_expiry');
+    return {
+      accessToken,
+      refreshToken: localStorage.getItem('auth_refresh_token') || null,
+      idToken: localStorage.getItem('auth_id_token') || null,
+      user: user ? JSON.parse(user) : null,
+      tokenExpiry: expiry ? parseInt(expiry, 10) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeLegacyTokens(tokens) {
+  try {
+    localStorage.setItem('auth_access_token', tokens.accessToken);
+    if (tokens.refreshToken) localStorage.setItem('auth_refresh_token', tokens.refreshToken);
+    if (tokens.idToken) localStorage.setItem('auth_id_token', tokens.idToken);
+    if (tokens.user) localStorage.setItem('auth_user', JSON.stringify(tokens.user));
+    if (tokens.tokenExpiry) localStorage.setItem('auth_token_expiry', String(tokens.tokenExpiry));
+  } catch (error) {
+    console.error('Failed to save the sign-in:', error?.message || error);
   }
 }
 

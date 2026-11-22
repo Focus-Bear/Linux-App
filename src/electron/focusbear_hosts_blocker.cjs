@@ -96,7 +96,7 @@ function writeHostsAtomic(content) {
     fs.writeFileSync(tmp, content, { mode: 0o644 });  // Write with correct permissions
     fs.renameSync(tmp, HOSTS_PATH); // Atomic operation on same filesystem
   } catch (e) {
-    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
+    try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch { /* nothing to do */ }
     console.error('[ERROR] Failed to write hosts atomically:', e.message);
     process.exit(1);
   }

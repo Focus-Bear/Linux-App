@@ -31,11 +31,11 @@ class SimpleUrlGrabber {
     ];
     
     // Note: These may not be accessible in Flatpak sandbox
-    for (const path of browserPaths) {
+    for (const _path of browserPaths) {
       try {
         // This is limited by Flatpak permissions, so we'll skip for now
         // In the future, you could implement SQLite reading here
-      } catch (error) {
+      } catch {
         // Expected in sandboxed environment
       }
     }
@@ -70,7 +70,7 @@ class SimpleUrlGrabber {
         } else {
           //console.log('Empty or null result');
         }
-      } catch (error) {
+      } catch {
         //console.log(`Method failed: ${method.cmd} - ${error.message}`);
       }
     }
@@ -97,7 +97,7 @@ class SimpleUrlGrabber {
           }
         }
       }
-    } catch (error) {
+    } catch {
       console.log('Could not get browser window from wmctrl');
     }
     
@@ -130,7 +130,7 @@ class SimpleUrlGrabber {
           }
         }
       }
-    } catch (error) {
+    } catch {
       console.log('wmctrl not available');
     }
     
@@ -153,7 +153,7 @@ class SimpleUrlGrabber {
           //console.log('Got full title:', title);
           return title;
         }
-      } catch (error) {
+      } catch {
         //console.log(`Method failed: ${method}`);
       }
     }
@@ -196,7 +196,7 @@ class SimpleUrlGrabber {
     
     const urlPatterns = [
       /(https?:\/\/[^\s\]]+)/i,
-      /([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}/
+      /([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}/
     ];
 
     for (const pattern of urlPatterns) {
@@ -266,7 +266,7 @@ class SimpleUrlGrabber {
           }
         }
       }
-    } catch (error) {
+    } catch {
       //console.log('Could not get process URLs');
     }
     
@@ -290,7 +290,7 @@ class SimpleUrlGrabber {
         await execAsync(`which ${tool}`);
         available[tool] = true;
         //console.log(`${tool} is available`);
-      } catch (error) {
+      } catch {
         available[tool] = false;
         //console.log(`${tool} is not available`);
       }
@@ -500,7 +500,7 @@ class SimpleUrlGrabber {
           };
         }
       }
-    } catch (error) {
+    } catch {
       //console.log('Could not get active browser process:', error.message);
     }
     

@@ -115,7 +115,9 @@
       "src/ui/**/*",
       "src/extension-chrome/**/*",
       "public/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.test.js",
+      "!src/ui/sanitizeHtmlTestDom.js"
     ],
     "extraResources": [
       {

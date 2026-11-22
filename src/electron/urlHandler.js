@@ -34,7 +34,7 @@ class UrlHandler {
       }
     });
 
-    ipcMain.on('start-url-monitoring', (event) => {
+    ipcMain.on('start-url-monitoring', () => {
       if (this.monitoringStop) {
         return;
       }

@@ -1,12 +1,15 @@
+// Must stay first: it wraps ipcMain so every handler registered after it
+// (also in the modules imported below) checks who is asking.
+import './ipcGuard.js';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-import { app, BrowserWindow, ipcMain, screen, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage, screen, shell } from "electron";
 import {createTray, getTrayWindow} from "./tray-handler.js"
 import { createWebView, switchToWebView, hideAllWebViews, webViewConfigs, resizeCurrentWebView, getCurrentActiveWebViewId, resendWebViewMetadata, destroyWebView, destroyAllWebViews, clearDashboardStorage } from './webview-handler.js';
-import { exec, execFile, spawn, execSync } from 'child_process';
+import { exec, execFile, execSync } from 'child_process';
 import { promisify } from 'util';
 import "./Blocker.js"
 import { setBroadcastFunction } from './Blocker.js';
@@ -19,6 +22,8 @@ import { createFocusSessionController } from './focusSessionController.js';
 import { ALLOW_ONLY_RENEW_MS, effectiveImmediateBlock } from './blockSettings.js';
 import { createBlockingState } from './blockingState.js';
 import { runSignOut, withoutAccountCopy } from './accountState.js';
+import { isAllowedNavigation, isFocusBearLink, redactUrl } from './security.js';
+import { createTokenVault } from './tokenVault.js';
 import {
   createLineReader,
   createSocketAuth,
@@ -41,7 +46,7 @@ import SimpleUrlGrabber from './simpleUrlGrabber.js';
 import dotenv from 'dotenv';
 import { promises as fs } from 'fs';
 import { createServer } from 'net';
-import { unlink } from 'fs/promises';
+
 
 dotenv.config();
 
@@ -105,7 +110,7 @@ async function loadWhitelistFromDisk() {
     const checked = validateWhitelistUpdate(JSON.parse(data));
     currentWhitelist = checked.ok ? checked.entries : [];
     console.log(`[Whitelist] Loaded ${currentWhitelist.length} active entries from disk`);
-  } catch (error) {
+  } catch {
     currentWhitelist = [];
   }
 }
@@ -340,9 +345,13 @@ function showExtensionWarning(browserId) {
     alwaysOnTop: true,
     title: 'Focus Bear — Extension Warning',
     autoHideMenuBar: true,
+    // The page only needs one call ("Close the browser now"); it gets it
+    // through the preload like every other window, not through Node.
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: join(app.getAppPath(), './src/electron/preload.js'),
+      devTools: !app.isPackaged,
     },
   });
   const BROWSER_NAMES = { firefox: 'Firefox', chrome: 'Chrome', chromium: 'Chromium', brave: 'Brave', opera: 'Opera' };
@@ -482,7 +491,7 @@ async function installNativeMessaging() {
     }
     const chromeZipPath = join(homedir(), '.local', 'share', 'focusbear', 'focusbear-extension-chrome.zip');
     try {
-      try { await fs.unlink(chromeZipPath); } catch {}
+      try { await fs.unlink(chromeZipPath); } catch { /* nothing to do */ }
       execSync(`cd "${localChromeExtDir}" && zip -r "${chromeZipPath}" .`, { stdio: 'pipe' });
       console.log('[Native Messaging] Chrome extension .zip ready at', chromeZipPath);
       console.log('[Native Messaging] Chrome: chrome://extensions → Load unpacked → select', localChromeExtDir);
@@ -494,7 +503,7 @@ async function installNativeMessaging() {
     // containing all extension scripts — selecting manifest.json alone only mounts that one file.
     const xpiPath = join(homedir(), '.local', 'share', 'focusbear', 'focusbear-extension.xpi');
     try {
-      try { await fs.unlink(xpiPath); } catch {}
+      try { await fs.unlink(xpiPath); } catch { /* nothing to do */ }
       execSync(`cd "${localExtDir}" && zip -r "${xpiPath}" .`, { stdio: 'pipe' });
       console.log('[Native Messaging] Host installed at', wrapperPath);
       console.log('[Native Messaging] Extension .xpi ready at', xpiPath);
@@ -515,8 +524,7 @@ console.log('[Main Process] App path:', app.getAppPath());
 console.log('[Main Process] User data path:', app.getPath('userData'));
 console.log('[Main Process] Node env:', process.env.NODE_ENV);
 
-let tray = null
-let focusBearView = null
+
 let mainWindow = null;
 let authWindow = null;
 let exitflag = false;
@@ -544,7 +552,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
+  app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -591,17 +599,24 @@ app.on("ready", function(){
         height: 850,
         width: 1000,
         show: true,
-        webviewTag: true,
         webPreferences: {
             preload: join(app.getAppPath(), "/src/electron/preload.js"),
-            webSecurity: false,
+            // The same-origin policy stays on: the Focus Bear API and Auth0
+            // answer cross-origin requests from the app (CORS), so nothing
+            // needs it off. It was off, with the full preload API in reach.
+            webSecurity: true,
+            nodeIntegration: false,
+            contextIsolation: true,
+            // No DevTools in an installed build. (These two were written
+            // outside webPreferences before, where Electron ignores them.)
+            devTools: !app.isPackaged,
+            webviewTag: false,
             // The window keeps time while hidden in the tray: it confirms the
             // block list in force every minute and runs habit countdowns.
             backgroundThrottling: false,
         },
-        devTools: false,
     });
-    tray = createTray(mainWindow)
+    createTray(mainWindow)
 
     // Look for a newer release shortly after launch and every 6 hours. The
     // renderer shows a banner (UpdateNotification.jsx) and Settings > About.
@@ -619,13 +634,13 @@ app.on("ready", function(){
         const filter = { urls: ['http://localhost/callback*'] };
 
         webRequest.onBeforeRequest(filter, async (details, callback) => {
-            console.log('[Auth] Intercepted callback on main window:', details.url);
+            console.log('[Auth] Intercepted callback on main window:', redactUrl(details.url));
 
             pendingProtocolUrl = details.url;
 
             if (mainWindow && !mainWindow.isDestroyed()) {
                 mainWindow.webContents.once('did-finish-load', () => {
-                    console.log('[Auth] Sending callback to renderer after reload:', pendingProtocolUrl);
+                    console.log('[Auth] Sending callback to renderer after reload');
                     if (pendingProtocolUrl) {
                         mainWindow.webContents.send('auth-protocol-callback', pendingProtocolUrl);
                         pendingProtocolUrl = null;
@@ -646,7 +661,7 @@ app.on("ready", function(){
 
     mainWindow.webContents.once('did-finish-load', () => {
         if (pendingProtocolUrl) {
-            console.log('Sending pending protocol URL to renderer:', pendingProtocolUrl);
+            console.log('Sending pending protocol URL to renderer');
             mainWindow.webContents.send('auth-protocol-callback', pendingProtocolUrl);
             pendingProtocolUrl = null;
         }
@@ -672,22 +687,22 @@ app.on("ready", function(){
 
     // Prevent popups in main window
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-        // Links to the Focus Bear website (terms, privacy policy) open in the browser.
-        if (/^https:\/\/(www\.)?focusbear\.io\//.test(url)) shell.openExternal(url);
+        // Links to Focus Bear's own pages (terms, privacy policy, support) open in the browser.
+        if (isFocusBearLink(url)) shell.openExternal(url);
         return { action: 'deny' };
     });
 
-    mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-        console.log('Navigation attempt to:', navigationUrl);
-
-        if (navigationUrl.startsWith('file://') ||
-            navigationUrl.startsWith('http://localhost:5173') ||
-            navigationUrl.includes('auth0.com')) {
-            return;
-        }
-
+    // The window carries the preload API, so it only ever shows the app's own
+    // page (and the Auth0 tenant's sign-out page). The address is parsed: the
+    // old rule let through any address that contained "auth0.com".
+    const navigationRule = { dev: !app.isPackaged, auth0Domain: process.env.VITE_AUTH0_DOMAIN || '' };
+    const guardNavigation = (event, navigationUrl) => {
+        if (isAllowedNavigation(navigationUrl, navigationRule)) return;
+        console.log('Navigation refused:', redactUrl(navigationUrl));
         event.preventDefault();
-    });
+    };
+    mainWindow.webContents.on('will-navigate', guardNavigation);
+    mainWindow.webContents.on('will-redirect', guardNavigation);
 
 
     // ipcMain.on('update-webview-bounds', function(event, webViewId, tabName) {
@@ -719,7 +734,21 @@ ipcMain.handle('check-for-updates', async () => {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('update-status', result);
   return result;
 });
-ipcMain.on('open-update-download', (event, url) => { openDownloadUrl(url); });
+// The link comes from the main process's own update check, not from the page.
+ipcMain.on('open-update-download', () => { openDownloadUrl(); });
+
+// Sign-in tokens: kept encrypted in the data folder (tokenVault.js), not in
+// the window's localStorage.
+const tokenVault = createTokenVault({
+  safeStorage,
+  fs,
+  path: join(app.getPath('userData'), 'sign-in.bin'),
+  log: (text) => console.error(text),
+});
+ipcMain.handle('auth-tokens:load', () => tokenVault.load());
+ipcMain.handle('auth-tokens:save', (event, tokens) => tokenVault.save(tokens));
+ipcMain.handle('auth-tokens:clear', () => tokenVault.clear());
+ipcMain.handle('auth-tokens:protection', () => tokenVault.protection());
 
 ipcMain.handle('get-local-settings', () => settingsFile.read());
 
@@ -839,7 +868,7 @@ let breakWarning = null;       // { seconds, deadline } while the reminder shows
 
 // Dev helper: FOCUSBEAR_BREAK_IN_SECONDS=20 makes every break due that many
 // seconds after the timer is set (breaks are otherwise at least 5 minutes apart).
-const breakTestSeconds = Number(process.env.FOCUSBEAR_BREAK_IN_SECONDS) || 0;
+const breakTestSeconds = app.isPackaged ? 0 : Number(process.env.FOCUSBEAR_BREAK_IN_SECONDS) || 0;
 const fullInterval = () =>
     breakTestSeconds > 0 && breaksActive(breakConfig) ? Date.now() + breakTestSeconds * 1000 : nextBreakAt(breakConfig, Date.now());
 
@@ -1025,7 +1054,7 @@ ipcMain.on('focus-session-false', function(event) {
         if (event.sender && !event.sender.isDestroyed()) {
             event.sender.send('focus-session-result', 'Focus session stopped');
         }
-    } catch (e) {
+    } catch {
         console.log('Could not send result to original sender (window destroyed)');
     }
 });
@@ -1042,9 +1071,7 @@ ipcMain.on('print-urls', function(event, urls) {
     console.log('URLs received for printing:\n', urls);
 });
 
-ipcMain.on('url-channel', function(e, urls){
-    // Handle URL export
-});
+
 
 // App lifecycle
 app.on('window-all-closed', function() {
@@ -1085,8 +1112,7 @@ app.setAsDefaultProtocolClient('focusbear');
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
-  console.log('=== MAIN PROCESS RECEIVED PROTOCOL URL (open-url event) ===');
-  console.log('URL:', url);
+  console.log('[Auth] Protocol URL received:', redactUrl(url));
 
   if (url.startsWith('focusbear://')) {
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1130,7 +1156,7 @@ function openAuthWindow(authUrl) {
     const filter = { urls: ['http://localhost/callback*'] };
 
     webRequest.onBeforeRequest(filter, async (details, callback) => {
-        console.log('[Auth] Intercepted callback:', details.url);
+        console.log('[Auth] Intercepted callback:', redactUrl(details.url));
 
         if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()) {
             mainWindow.webContents.send('auth-protocol-callback', details.url);
@@ -1150,22 +1176,6 @@ function openAuthWindow(authUrl) {
     });
 
     authWindow.loadURL(authUrl);
-}
-
-function handleAuthRedirect(url) {
-    if (url.startsWith('focusbear://')) {
-        console.log('Auth callback received:', url);
-
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('auth-protocol-callback', url);
-            mainWindow.show();
-            mainWindow.focus();
-        }
-
-        if (authWindow && !authWindow.isDestroyed()) {
-            authWindow.close();
-        }
-    }
 }
 
 //Webiew Handling
@@ -1229,12 +1239,17 @@ ipcMain.on('set-webview-bounds', function(event, rect) {
 
 ipcMain.handle('get-focus-state', () => focusState.isActive());
 
-ipcMain.on('hide-all-webviews', function(event) {
+ipcMain.on('hide-all-webviews', function() {
     hideAllWebViews(mainWindow);
 })
 
 ipcMain.on('open-auth-window', function(event, url) {
-    console.log('Opening auth window with URL:', url);
+    // Only the sign-in page of an Auth0 tenant is opened here.
+    if (!isAllowedNavigation(url, { auth0Domain: process.env.VITE_AUTH0_DOMAIN || '' }) || !String(url).startsWith('https://')) {
+        console.error('[Auth] Refused to open a sign-in window for', redactUrl(url));
+        return;
+    }
+    console.log('Opening auth window:', redactUrl(url));
     openAuthWindow(url);
 })
 
@@ -1286,7 +1301,7 @@ function applySettings(settings) {
 
 ipcMain.handle('detect-distro', async function() {
   return new Promise((resolve) => {
-    exec('cat /etc/os-release', (error, stdout, stderr) => {
+    exec('cat /etc/os-release', (error, stdout) => {
       if (error) {
         resolve('unknown');
         return;
@@ -1312,7 +1327,7 @@ ipcMain.handle('detect-distro', async function() {
 
 ipcMain.handle('cleanup-app-data', async function() {
   const details = [];
-  let success = true;
+
 
   try {
     if (isFocusActive || sessions.get()) {
@@ -1323,14 +1338,14 @@ ipcMain.handle('cleanup-app-data', async function() {
     try {
       await fs.unlink('/tmp/focusbear-blocklist.txt');
       details.push('Removed blocklist file');
-    } catch (error) {
+    } catch {
       console.log('Blocklist file not found or already removed');
     }
 
     try {
       await fs.unlink('/tmp/focusbear-keywords.txt');
       details.push('Removed keywords file');
-    } catch (error) {
+    } catch {
       console.log('Keywords file not found or already removed');
     }
 
@@ -1338,7 +1353,7 @@ ipcMain.handle('cleanup-app-data', async function() {
     try {
       await fs.unlink(settingsPath);
       details.push('Removed local settings backup');
-    } catch (error) {
+    } catch {
       console.log('Settings file not found or already removed');
     }
 

@@ -1,5 +1,6 @@
 import { app, net, shell } from 'electron';
 import { isNewer, pickAsset } from './updateVersion.js';
+import { isReleaseDownload } from './security.js';
 
 const GITHUB_REPO = 'Focus-Bear/Linux-App';
 const DEFAULT_UPDATE_URL = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
@@ -10,7 +11,9 @@ let pollTimer = null;
 let lastResult = null;
 
 function getUpdateUrl() {
-    return process.env.FOCUSBEAR_UPDATE_URL || DEFAULT_UPDATE_URL;
+    // The test switch (another feed, possibly plain http) only works in a dev run.
+    if (!app.isPackaged && process.env.FOCUSBEAR_UPDATE_URL) return process.env.FOCUSBEAR_UPDATE_URL;
+    return DEFAULT_UPDATE_URL;
 }
 
 function fetchJson(url) {
@@ -95,8 +98,14 @@ export function getLastResult() {
     return lastResult;
 }
 
-export function openDownloadUrl(url) {
-    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
-        shell.openExternal(url);
-    }
+/**
+ * Opens the download of the release the last check found. The link is the
+ * main process's own (not one the page passes in) and must be a release of
+ * this repository on GitHub; a dev run with the test feed may open any https link.
+ */
+export function openDownloadUrl() {
+    const url = lastResult && lastResult.downloadUrl;
+    if (typeof url !== 'string') return;
+    const testFeed = !app.isPackaged && Boolean(process.env.FOCUSBEAR_UPDATE_URL) && /^https?:\/\//i.test(url);
+    if (isReleaseDownload(url) || testFeed) shell.openExternal(url);
 }

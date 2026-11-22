@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         statsContainer.appendChild(div);
       }
     }
-  } catch {}
+  } catch { /* nothing to do */ }
 
   // "Immediately block super distracting sites" (set in the Focus Bear app):
   // no temporary unblock from this page.
@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   };
 
   let domain = '';
-  try { domain = new URL(blockedUrl).hostname; } catch {}
+  try { domain = new URL(blockedUrl).hostname; } catch { /* nothing to do */ }
 
   const updateButtonText = () => {
     const label = formatDuration(parseInt(durationSelect.value, 10));

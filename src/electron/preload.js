@@ -24,6 +24,18 @@ const API = {
 
     showPreferences: function() { return ipcRenderer.send('show-preferences'); },
 
+    // The "extension disconnected" warning window: close the browser now.
+    closeBrowserNow: function() { return ipcRenderer.send('extension-warning-close-browser'); },
+
+    // Sign-in tokens, kept encrypted by the main process (tokenVault.js).
+    authTokens: {
+        load: function() { return ipcRenderer.invoke('auth-tokens:load'); },
+        save: function(tokens) { return ipcRenderer.invoke('auth-tokens:save', tokens); },
+        clear: function() { return ipcRenderer.invoke('auth-tokens:clear'); },
+        // 'keyring' | 'obscured' | 'none'
+        protection: function() { return ipcRenderer.invoke('auth-tokens:protection'); },
+    },
+
     showQuitDialog: function() {ipcRenderer.send("quit-channel")},
 
     instantBlock: function() {ipcRenderer.send("instant-block")},
@@ -210,10 +222,7 @@ const API = {
         ipcRenderer.removeAllListeners('auth-protocol-callback');
 
         const handler = function(event, url) {
-            console.log("=== PRELOAD RECEIVED CALLBACK ===");
-            console.log("URL:", url);
             callback(url);
-            console.log("preload called")
         };
 
         ipcRenderer.on('auth-protocol-callback', handler);
