@@ -166,12 +166,16 @@ jobs:
       # ----------------------------------------------------------
       # 11. Upload artifacts
       # ----------------------------------------------------------
+      # main's packages are what the team installs (there are no Releases), so they keep 90 days;
+      # every other branch builds on each push, ~280 MB a run, and 14 days is enough to test them.
+      # Actions storage beyond the org's 2 GB is billed.
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: focusbear-linux-AppImage
           path: dist/*.AppImage
           if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 90 || 14 }}
 
       - name: Upload .deb package
         uses: actions/upload-artifact@v4
@@ -179,6 +183,7 @@ jobs:
           name: focusbear-linux-deb
           path: dist/*.deb
           if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 90 || 14 }}
 
       - name: Upload .rpm package
         uses: actions/upload-artifact@v4
@@ -186,3 +191,4 @@ jobs:
           name: focusbear-linux-rpm
           path: dist/*.rpm
           if-no-files-found: error
+          retention-days: ${{ github.ref == 'refs/heads/main' && 90 || 14 }}

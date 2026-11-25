@@ -75,7 +75,7 @@ Uploads each package format as separate GitHub Actions artifacts:
 - `focusbear-linux-deb`
 - `focusbear-linux-rpm`
 
-These artifacts are available for download from the Actions run for 90 days (default GitHub retention).
+These artifacts are available for download from the Actions run for 90 days when built from `main`, and 14 days from any other branch (Actions storage beyond the org's 2 GB is billed).
 
 ---
 
